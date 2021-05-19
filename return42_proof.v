@@ -1,6 +1,7 @@
 Require Export ch2o.abstract_c.architectures.
 Require Export ch2o.abstract_c.interpreter.
 Require Export ch2o.core_c.smallstep.
+Require Export ch2o.core_c.restricted_smallstep.
 Require Export return42.
 
 Definition get_right{A B}(v: A + B)(H: match v with inl _ => False | inr _ => True end): B.
@@ -46,70 +47,77 @@ Definition Γ: env K := fst (fst core_c_program).
 Definition δ: funenv K := snd (fst core_c_program).
 Definition S0 := snd core_c_program.
 
-Check δ.
-
-Check (stringmap.stringmap_lookup "main" δ).
-
-Check (δ !! "main").
-
 Lemma call_main_safe: forall S, rtc (cstep Γ δ) (State [] (Call "main" []) ∅) S -> ~ is_undef_state S.
 intros.
-inversion H.
-- inversion 1.
-  simpl in H2.
-  elim (is_Some_None H2).
-- subst.
-  inversion H0.
-  cbv beta iota zeta delta - [lockset_empty] in H7.
-  Notation int := (IntType Signed {|arch_rank_car := IntRank|}).
-  assert (forall {X} (x y: X), Some x = Some y -> x = y). {
-  injection 1; tauto.
+apply csteps_rcsteps in H.
+inv_rcsteps H. {
+  inversion 1.
+  simpl in H.
+  elim (is_Some_None H).
+}
+inversion H; clear H; subst.
+assert (match Some s with None => s | Some s => s end = s). {
+  reflexivity.
+}
+rewrite <- H6 in H.
+simpl in H.
+subst.
+clear H6.
+destruct os; simpl in H8; try discriminate; clear H8.
+clear H7.
+inversion H1; subst; clear H1. {
+  inversion 1.
+  simpl in H.
+  elim (is_Some_None H).
+}
+simpl in H.
+inversion H; subst; clear H.
+destruct E; try discriminate.
+simpl in H3.
+injection H3; clear H3; intros; subst.
+inversion H0; clear H0; subst. {
+  inversion 1.
+  simpl in H.
+  elim (is_Some_None H).
+}
+inv_rcstep.
+- inversion H0; clear H0; subst.
+  clear H7.
+  inversion H1; clear H1; subst. {
+    inversion 1.
+    elim (is_Some_None H).
   }
-  apply H10 in H7.
-  subst.
-  inversion H1.
-  + inversion 1.
-    simpl in H5.
-    discriminate.
-  + subst.
-    inversion H2.
-    subst.
-    destruct E; try discriminate.
-    simpl in H6.
-    injection H6; clear H6; intros; subst.
-    inversion H3.
-    * inversion 1.
-      simpl in H7.
-      discriminate.
-    * subst.
-      inversion H4.
-      ++ subst.
-         destruct E; try discriminate.
-         -- simpl in H11.
-            subst.
-            inversion H13.
-            subst.
-            destruct os; simpl in H9; try discriminate.
-            clear H8 H9 H10 H0 H1 H2 H3 H4 H13.
-            clear H H16.
-            simpl in H5.
-            inversion H5.
-            subst.
-            ** inversion 1.
-               simpl in H.
-               elim (is_Some_None H).
-            ** subst.
-               (* Hier wordt Coq ondraaglijk traag... *)
-               inversion H; subst.
-
+  simpl in H.
+  unfold int_cast in H.
+  simpl in H.
+  unfold int_pre_cast in H.
+  simpl in H.
+  revert H0.
+  apply (rcstep_expr_inv _ _ _ (fun y => Γ\ δ\ [] ⊢ₛ y ⇒* S → ¬ is_undef_state S) _ _ _ _ _ _ H).
+  clear H.
+  intro H.
+  rewrite mem_unlock_empty in H.
+  inversion H; clear H; subst. {
+    inversion 1.
+    elim (is_Some_None H).
+  }
+  inversion H0; clear H0; subst.
+  simpl in H1.
+  inversion H1; clear H1; subst. {
+    inversion 1.
+    elim (is_Some_None H).
+  }
+  inversion H.
+- elim H1.
+  clear H0 H1 H2 S y.
+  eapply ehsafe_step.
+  constructor.
+  constructor.
+  + cbv. intro. discriminate.
+  + cbv. reflexivity.
+Qed.
 
 Goal forall S, rtc (cstep Γ δ) S0 S -> ~ is_undef_state S.
 intros.
-intro.
-inversion H.
-- subst.
-  simpl in H0.
-  inversion H0.
-  discriminate.
-- unfold 
-  
+apply call_main_safe with (1:=H).
+Qed.
