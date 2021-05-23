@@ -24,6 +24,12 @@ Inductive mem_stack `{Env K} (Γ : env K) (Δ : memenv K): stack K -> store -> m
   mem_stack Γ Δ ρ st m' ->
   ⊥[m; m'] ->
   mem_stack Γ Δ ((o, sintT%T)::ρ) (mv::st) (m ∪ m')
+| mem_stack_freed ρ st m m':
+  ✓ Γ ->
+  mem_stack Γ Δ ρ st m ->
+  m ⊆ m' ->
+  ✓{Γ, Δ} m' ->
+  mem_stack Γ Δ ρ st m'
 .
 
 Lemma mem_stack_valid `{EnvSpec K} Γ Δ ρ st m:
@@ -36,6 +42,7 @@ induction 1.
   * apply mem_singleton_valid with (4:=H4); try assumption.
     discriminate.
   * assumption.
+- assumption.
 Qed.
 
 Lemma mem_stack_lookup_stack `{Env K} Γ Δ ρ st m i mv:
@@ -53,6 +60,7 @@ induction H0.
   + simpl in H6.
     simpl.
     apply IHmem_stack with (1:=H6).
+- apply IHmem_stack.
 Qed.
 
 Lemma mem_stack_lookup_mem `{EnvSpec K} Γ Δ ρ st m i v o:
@@ -87,6 +95,11 @@ destruct i; simpl in *.
   + apply sep_union_subseteq_r.
     assumption.
   + apply IHmem_stack with (1:=H7) (2:=H8).
+- eapply mem_lookup_subseteq with (m1:=m).
+  + assumption.
+  + apply mem_stack_valid with (1:=H2).
+  + assumption.
+  + eapply IHmem_stack; eassumption.
 Qed.
 
 Lemma mem_stack_weaken_memenv `{EnvSpec K} Γ Δ ρ st m Δ':
@@ -104,6 +117,8 @@ induction 1; intros.
     * apply memenv_subseteq_forward.
       assumption.
   + apply IHmem_stack; assumption.
+- apply mem_stack_freed with (m0:=m); auto.
+  apply cmap_valid_weaken with (2:=H4); trivial.
 Qed.
 
 Lemma mem_stack_forced `{EnvSpec K} Γ Δ ρ st m i v o:
@@ -140,6 +155,82 @@ destruct i; simpl in *.
   + eapply IHmem_stack; eassumption.
   + rewrite mem_stack_lookup_mem with (1:=H5) (2:=H7) (3:=H8).
     eexists; reflexivity.
+- eapply mem_forced_subseteq with (3:=H3).
+  + assumption.
+  + apply mem_stack_valid with (1:=H2).
+  + eapply IHmem_stack; eassumption.
+  + rewrite mem_stack_lookup_mem with (1:=H2) (2:=H5) (3:=H6).
+    eexists; reflexivity.
+Qed.
+
+Lemma mem_stack_free `{EnvSpec K} Γ Δ ρ st m Δ' o:
+  mem_stack Γ Δ ρ st m ->
+  Δ' = alter (prod_map id (λ _, true)) o Δ ->
+  ✓{Γ, Δ'} m ->
+  o ∉ dom indexset m ->
+  mem_stack Γ Δ' ρ st m.
+induction 1; intros.
+- apply mem_stack_empty.
+  + assumption.
+  + apply cmap_valid_memenv_valid with (1:=H5).
+  + assumption.
+- apply mem_stack_alloc.
+  + assumption.
+  + apply cmap_valid_memenv_valid with (1:=H8).
+  + rewrite H7.
+    apply mem_free_index_alive_ne. 2:assumption.
+    intro.
+    subst.
+    rewrite cmap_dom_union in H9.
+    elim H9.
+    apply elem_of_union_l.
+    assert (m !!{Γ} addr_top o0 sintT%BT <> None). {
+      rewrite mem_lookup_singleton with (3:=H4).
+      - discriminate.
+      - assumption.
+      - rewrite perm_kind_full.
+        reflexivity.
+    }
+    unfold lookupE in H7.
+    unfold mem_lookup in H7.
+    unfold lookupE in H7.
+    destruct m.
+    simpl in *.
+    unfold cmap_lookup in H7.
+    simpl in *.
+    case_eq (cmap_car !! o0); intros.
+    * eapply elem_of_dom_2.
+      eassumption.
+    * rewrite H10 in H7.
+      rewrite option_guard_True in H7.
+      -- simpl in H7.
+         congruence.
+      -- apply addr_top_strict.
+         ++ assumption.
+         ++ constructor.
+            constructor.
+  + apply mem_singleton_weaken with (4:=H4); try assumption.
+    * reflexivity.
+    * rewrite H7.
+      apply mem_free_forward.
+  + apply IHmem_stack; try assumption.
+    * apply cmap_valid_subseteq with (2:=H8).
+      -- assumption.
+      -- apply sep_union_subseteq_r.
+         assumption.
+    * intro.
+      elim H9.
+      rewrite cmap_dom_union.
+      apply elem_of_union_r; assumption.
+  + assumption.
+- apply mem_stack_freed with (m0:=m); try assumption.
+  apply IHmem_stack; try assumption.
+  + apply cmap_valid_subseteq with (2:=H6); assumption.
+  + apply sep_union_difference in H3.
+    rewrite <- H3 in H7.
+    rewrite cmap_dom_union in H7.
+    intro; elim H7.
+    apply elem_of_union_l; assumption.
 Qed.
 
 Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
@@ -341,8 +432,49 @@ induction 1.
     inv_rcstep.
     apply H4 with (st'0:=st') (3:=H10).
     * reflexivity.
-    * 
-    
+    * inversion H8; subst.
+      -- apply mem_stack_freed with (m1:=m'0).
+         ++ assumption.
+         ++ apply mem_stack_free with (1:=H18) (o0:=o).
+            ** apply mem_free_memenv_of.
+            ** apply cmap_valid_subseteq with (m2:=mem_free o (m0 ∪ m'0)).
+               --- assumption.
+               --- rewrite mem_free_memenv_of.
+                   apply mem_free_valid.
+                   +++ assumption.
+                   +++ apply mem_stack_valid with (1:=H8).
+               --- assert (mem_freeable_perm o false m0). {
+                     apply mem_freeable_perm_singleton with (1:=H16).
+                   }
+                   rewrite mem_free_union with (μ:=false).
+                   +++ apply sep_union_subseteq_r.
+                       apply sep_disjoint_list_double.
+                       apply mem_free_disjoint with (2:=H6).
+                       apply sep_disjoint_list_double.
+                       assumption.
+                   +++ apply sep_disjoint_list_double; assumption.
+                   +++ assumption.
+            ** rewrite sep_disjoint_list_double in H19.
+               destruct m0.
+               destruct m'0.
+               simpl in *.
+               apply not_elem_of_dom.
+               unfold disjoint in H19.
+               unfold sep_disjoint in H19.
+               unfold mem_sep_ops in H19.
+               unfold cmap_ops in H19.
+               pose proof (H19 o).
+               apply mem_lookup_singleton in H16.
+               --- simpl in H16.
+                   unfold mem_lookup in H16.
+                   unfold lookupE in H16.
+                   unfold cmap_lookup in H16.
+                   simpl in H16.
+                   destruct (cmap_car0 !! o).
+                   +++ destruct (cmap_car !! o).
+                       *** 
+               --- destruct 
+               
             ** apply cmap_valid_weaken with (Γ1:=Γ) (Δ1:='{m}).
                --- assumption.
                --- apply mem_stack_valid with (1:=H3).
