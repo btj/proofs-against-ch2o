@@ -89,6 +89,23 @@ destruct i; simpl in *.
   + apply IHmem_stack with (1:=H7) (2:=H8).
 Qed.
 
+Lemma mem_stack_weaken_memenv `{EnvSpec K} Γ Δ ρ st m Δ':
+  mem_stack Γ Δ ρ st m ->
+  ✓{Γ} Δ' ->
+  Δ ⊆ Δ' ->
+  mem_stack Γ Δ' ρ st m.
+induction 1; intros.
+- apply mem_stack_empty; try assumption.
+  apply cmap_valid_weaken with (2:=H3); try assumption; try reflexivity.
+- apply mem_stack_alloc; try assumption.
+  + apply memenv_subseteq_alive with (1:=H8) (2:=H3).
+  + apply mem_singleton_weaken with (4:=H4); try assumption.
+    * reflexivity.
+    * apply memenv_subseteq_forward.
+      assumption.
+  + apply IHmem_stack; assumption.
+Qed.
+
 Lemma mem_stack_forced `{EnvSpec K} Γ Δ ρ st m i v o:
   mem_stack Γ Δ ρ st m ->
   st !! i = Some (Some v) ->
@@ -209,31 +226,123 @@ induction 1.
   inv_rcstep.
   apply IHexec with (1:=H7).
   + simpl.
-    rewrite <- sep_left_id with (x:=m) at 2.
-    * rewrite mem_alloc_union.
+    destruct (mem_alloc_singleton Γ '{mem_alloc Γ o false perm_full (val_new Γ sintT%BT) m} m o false perm_full (indetV sintT) sintT%T) as [m2 [Hmem_alloc [Hdisjoint Hsingleton]]].
+    * assumption.
+    * rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+      -- apply cmap_valid_weaken with (Γ1:=Γ) (Δ1:='{m}).
+         ++ assumption.
+         ++ apply mem_stack_valid with (1:=H3).
+         ++ reflexivity.
+         ++ apply insert_subseteq.
+            rewrite <- cmap_dom_memenv_of in H2.
+            apply not_elem_of_dom with (1:=H2).
+         ++ rewrite <- mem_alloc_memenv_of with (Γ0:=Γ) (Δ:=empty) (μ:=false) (γ:=perm_full) (v:=indetV sintT).
+            apply mem_alloc_valid' with (τ:=sintT%T).
+            ** assumption.
+            ** apply mem_stack_valid with (1:=H3).
+            ** assumption.
+            ** apply perm_full_valid.
+            ** apply perm_full_mapped.
+            ** constructor. constructor.
+               --- constructor.
+               --- discriminate.
+            ** assumption.
+            ** constructor. constructor.
+               --- constructor.
+               --- discriminate.
+      -- assumption.
+      -- apply val_new_typed.
+         ** assumption.
+         ** constructor.
+            constructor.
+    * rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+      -- apply mem_alloc_index_typed.
+      -- assumption.
+      -- apply val_new_typed.
+         ** assumption.
+         ** constructor.
+            constructor.
+    * rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+      -- apply mem_alloc_index_alive.
+      -- assumption.
+      -- apply val_new_typed.
+         ++ assumption.
+         ++ constructor.
+            constructor.
+    * assumption.
+    * apply perm_full_valid.
+    * apply perm_full_mapped.
+    * constructor. constructor.
+      -- constructor.
+      -- discriminate.
+    * assert (val_new Γ sintT%BT = indetV sintT). {
+        rewrite val_new_base.
+        destruct (decide (sintT%BT = voidT%BT)); try discriminate.
+        reflexivity.
+      }
+      rewrite H6 in *.
+      rewrite Hmem_alloc.
       apply mem_stack_alloc.
       -- assumption.
-      -- eapply cmap_valid_memenv_valid.
+      -- rewrite <- Hmem_alloc.
+         eapply cmap_valid_memenv_valid.
          apply mem_alloc_valid' with (τ:=sintT%T).
          ++ assumption.
          ++ apply mem_stack_valid with (1:=H3).
          ++ assumption.
          ++ apply perm_full_valid.
          ++ apply perm_full_mapped.
-         ++ apply val_new_typed.
-            ** assumption.
+         ++ constructor.
+            constructor.
             ** constructor.
-               constructor.
-      -- rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** discriminate.
+      -- rewrite <- Hmem_alloc.
+         rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
          ++ apply mem_alloc_index_alive.
          ++ assumption.
-         ++ apply val_new_typed.
+         ++ constructor.
+            constructor.
+            ** constructor.
+            ** discriminate.
+      -- rewrite <- Hmem_alloc.
+         assumption.
+      -- apply mem_stack_weaken_memenv with (Δ:='{m}).
+         ++ assumption.
+         ++ rewrite <- Hmem_alloc.
+            rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** apply mem_alloc_memenv_valid.
+               --- apply cmap_valid_memenv_valid with (m0:=m).
+                   apply mem_stack_valid with (1:=H3).
+               --- rewrite <- cmap_dom_memenv_of in H2.
+                   apply not_elem_of_dom with (1:=H2).
+               --- constructor. constructor.
             ** assumption.
             ** constructor.
                constructor.
-      -- destruct (mem_alloc_singleton Γ '{mem_alloc Γ o false perm_full (val_new Γ sintT%BT) m} m o false perm_full (indetV sintT) sintT%T) as [m2 [Hmem_alloc [Hdisjoint Hsingleton]]].
-         ++ assumption.
-         ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+               --- constructor.
+               --- discriminate.
+         ++ rewrite <- Hmem_alloc.
+            rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** apply insert_subseteq.
+               rewrite <- cmap_dom_memenv_of in H2.
+               apply not_elem_of_dom with (1:=H2).
+            ** assumption.
+            ** constructor.
+               constructor.
+               --- constructor.
+               --- discriminate.
+      -- apply sep_disjoint_list_double; assumption.
+  + intros.
+    injection H6; clear H6; intros; subst.
+    simpl in *.
+    inv_rcsteps H9. {
+      elim HS.
+    }
+    inv_rcstep.
+    apply H4 with (st'0:=st') (3:=H10).
+    * reflexivity.
+    * 
+    
             ** apply cmap_valid_weaken with (Γ1:=Γ) (Δ1:='{m}).
                --- assumption.
                --- apply mem_stack_valid with (1:=H3).
