@@ -37,9 +37,12 @@ Admitted.
 Inductive outcome := onormal(s: store) | oreturn(z: Z).
 
 Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
-| exec_local st s O:
-  exec (None::st) s O ->
-  exec st (local{sintT%BT} s) O
+| exec_local_normal st s mv st':
+  exec (None::st) s (onormal (mv::st')) ->
+  exec st (local{sintT%BT} s) (onormal st')
+| exec_local_return st s z:
+  exec (None::st) s (oreturn z) ->
+  exec st (local{sintT%BT} s) (oreturn z)
 | exec_assign st i e z:
   eval st e z ->
   exec st (var i ::= cast{sintT%BT} e) (onormal (<[i:=Some z]>st))
