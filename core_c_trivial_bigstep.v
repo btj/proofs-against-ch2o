@@ -174,12 +174,18 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
   exec st (ret (cast{sintT%BT} e)) (oreturn z)
 .
 
-Definition is_final_state `{Env K} S := forall Γ δ S', ~ Γ\ δ\ [] ⊢ₛ S ⇒ S'.
+Definition is_final_state `{Env K} (S: state K) :=
+  match S with
+    State _ (Return _ _) _ => True
+  | State _ (Undef _) _ => True
+  | _ => False
+  end.
 
-Lemma bigstep_sound_lemma `{Env K} st s O (P: Prop):
-  exec st s O ->
-  forall Γ δ k m S,
+Lemma bigstep_sound_lemma `{EnvSpec K} Γ δ st s O S (P: Prop):
+  ✓ Γ ->
   is_final_state S ->
+  exec st s O ->
+  forall k m,
   Γ\ δ\ [] ⊢ₛ State k (Stmt ↘ s) m ⇒* S ->
   mem_stack Γ '{m} (rlocals [] k) st m ->
   (forall st' m',
@@ -193,6 +199,109 @@ Lemma bigstep_sound_lemma `{Env K} st s O (P: Prop):
    Γ\ δ\ [] ⊢ₛ State k (Stmt (⇈ intV{sintT} z) s) m' ⇒* S ->
    P) ->
   P.
+intros HΓ HS.
+induction 1.
+- (* exec_local_normal *)
+  intros.
+  inv_rcsteps H2. {
+    elim HS.
+  }
+  inv_rcstep.
+  apply IHexec with (1:=H7).
+  + simpl.
+    rewrite <- sep_left_id with (x:=m) at 2.
+    * rewrite mem_alloc_union.
+      apply mem_stack_alloc.
+      -- assumption.
+      -- eapply cmap_valid_memenv_valid.
+         apply mem_alloc_valid' with (τ:=sintT%T).
+         ++ assumption.
+         ++ apply mem_stack_valid with (1:=H3).
+         ++ assumption.
+         ++ apply perm_full_valid.
+         ++ apply perm_full_mapped.
+         ++ apply val_new_typed.
+            ** assumption.
+            ** constructor.
+               constructor.
+      -- rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+         ++ apply mem_alloc_index_alive.
+         ++ assumption.
+         ++ apply val_new_typed.
+            ** assumption.
+            ** constructor.
+               constructor.
+      -- destruct (mem_alloc_singleton Γ '{mem_alloc Γ o false perm_full (val_new Γ sintT%BT) m} m o false perm_full (indetV sintT) sintT%T) as [m2 [Hmem_alloc [Hdisjoint Hsingleton]]].
+         ++ assumption.
+         ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** apply cmap_valid_weaken with (Γ1:=Γ) (Δ1:='{m}).
+               --- assumption.
+               --- apply mem_stack_valid with (1:=H3).
+               --- reflexivity.
+               --- apply insert_subseteq.
+                   rewrite <- cmap_dom_memenv_of in H2.
+                   apply not_elem_of_dom with (1:=H2).
+               --- rewrite <- mem_alloc_memenv_of with (Γ0:=Γ) (Δ:=empty) (μ:=false) (γ:=perm_full) (v:=indetV sintT).
+                   apply mem_alloc_valid' with (τ:=sintT%T).
+                   +++ assumption.
+                   +++ apply mem_stack_valid with (1:=H3).
+                   +++ assumption.
+                   +++ apply perm_full_valid.
+                   +++ apply perm_full_mapped.
+                   +++ constructor. constructor.
+                       *** constructor.
+                       *** discriminate.
+                   +++ assumption.
+                   +++ constructor. constructor.
+                       *** constructor.
+                       *** discriminate.
+            ** assumption.
+            ** apply val_new_typed.
+               --- assumption.
+               --- constructor.
+                   constructor.
+         ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** apply mem_alloc_index_typed.
+            ** assumption.
+            ** apply val_new_typed.
+               --- assumption.
+               --- constructor.
+                   constructor.
+         ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** apply mem_alloc_index_alive.
+            ** assumption.
+            ** apply val_new_typed.
+               --- assumption.
+               --- constructor.
+                   constructor.
+         ++ assumption.
+         ++ apply perm_full_valid.
+         ++ apply perm_full_mapped.
+         ++ constructor. constructor.
+                       *** constructor.
+                       *** discriminate.
+         ++ Opaque mem_alloc.
+            simpl in *.
+            assert (mem_alloc Γ o false perm_full (indetV sintT) ∅ ∪ m = m2 ∪ m). {
+              rewrite <- mem_alloc_union.
+              - rewrite sep_left_id.
+                + assumption.
+                + eapply cmap_valid_sep_valid.
+                  apply mem_stack_valid with (1:=H3).
+              - assumption.
+            }
+            apply sep_cancel_r in H6.
+            ** assert (val_new Γ sintT%BT = indetV sintT). {
+                 rewrite val_new_base.
+                 destruct (decide (sintT%BT = voidT%BT)); try discriminate.
+                 reflexivity.
+               }
+               rewrite H8.
+               rewrite H6.
+               rewrite H8 in Hsingleton.
+               apply Hsingleton.
+            ** 
+
 Admitted.
 
 Theorem bigstep_sound `{Env K} s z:
