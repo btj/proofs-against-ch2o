@@ -1,6 +1,11 @@
+Require Export Nat.
 Require Export ch2o.prelude.orders.
+Require Export ch2o.prelude.nmap.
+Require Export ch2o.prelude.stringmap.
+Require Export ch2o.memory.memory_basics.
 Require Export ch2o.abstract_c.architectures.
 Require Export ch2o.abstract_c.interpreter.
+Require Export ch2o.abstract_c.frontend_sound.
 Require Export ch2o.core_c.smallstep.
 Require Export ch2o.core_c.restricted_smallstep.
 Require Export ch2o.core_c.expression_eval_smallstep.
@@ -24,6 +29,19 @@ Notation K := (arch_rank A).
 
 Notation M := (error (frontend_state K) string).
 
+Lemma alloc_program_ok: match alloc_program (K:=K) decls empty with inl _ => False | inr _ => True end.
+exact I.
+Qed.
+
+Definition alloc_program_result: frontend_state K.
+eapply snd.
+eapply get_right.
+apply alloc_program_ok.
+Defined.
+
+Compute (stringmap_to_list (env_t (to_env alloc_program_result))).
+Compute (stringmap_to_list (env_f (to_env alloc_program_result))).
+
 Definition to_core_c_program: M (env K * funenv K * state K) :=
   _ ← alloc_program decls;
   Δg ← gets to_globals;
@@ -45,9 +63,148 @@ Qed.
 
 Definition core_c_program: env K * funenv K * state K := get_right to_core_c_program_result to_core_c_program_ok.
 
-Definition Γ: env K := fst (fst core_c_program).
-Definition δ: funenv K := snd (fst core_c_program).
-Definition S0 := snd core_c_program.
+Definition Γ: env K := to_env alloc_program_result.
+Definition δ: funenv K := to_funenv alloc_program_result.
+Definition m0: mem K := to_mem alloc_program_result.
+Definition S0 := initial_state m0 "main" [].
+
+Lemma alloc_program_eq: alloc_program decls empty = mret () alloc_program_result.
+reflexivity.
+Qed.
+
+Lemma Γ_valid: ✓ Γ.
+apply alloc_program_valid with (1:=alloc_program_eq).
+Qed.
+
+Lemma δ_valid: ✓{Γ,'{m0}} δ.
+apply alloc_program_valid with (1:=alloc_program_eq).
+Qed.
+
+Lemma m0_valid: ✓{Γ} m0.
+apply alloc_program_valid with (1:=alloc_program_eq).
+Qed.
+
+Lemma mem_lock_cmap (Γ: env K) o (m: indexmap (cmap_elem K (pbit K))):
+  mem_lock Γ (addr_top o sintT%BT) (CMap m) =
+  CMap (alter (cmap_elem_map (ctree_map pbit_lock)) o m).
+reflexivity.
+Qed.
+
+Lemma mem_unlock_lock_singleton (Γ: env K) o (m: mem K):
+  ✓{Γ} m ->
+  '{m} !! o = Some (sintT%T, false) ->
+  mem_writable Γ (addr_top o sintT%BT) m ->
+  mem_unlock
+    (lock_singleton Γ (addr_top o sintT%BT))
+    (mem_lock Γ (addr_top o sintT%BT) m) = m.
+destruct m as [m].
+intros Hvalid. intros.
+destruct Hvalid as [Hvalid1 [Hvalid2 Hvalid3]].
+simpl in *.
+assert (forall (m1: indexmap (cmap_elem K (pbit K))) m2, m1 = m2 -> CMap m1 = CMap m2). { intros; congruence. }
+apply H1.
+apply map_eq.
+intro i.
+rewrite lookup_merge.
+2:reflexivity.
+destruct (decide (i = o)).
+- subst.
+  rewrite lookup_singleton.
+  rewrite lookup_alter.
+  destruct H0 as [w [Hw H'w]].
+  simpl in *.
+  unfold cmap_lookup in Hw.
+  simpl in Hw.
+  case_eq (m !! o); intros; rewrite H0 in Hw; try discriminate.
+  destruct c; try discriminate.
+  simpl in Hw.
+  injection Hw; clear Hw; intros; subst.
+  simpl.
+  rewrite lookup_fmap in H.
+  rewrite H0 in H.
+  simpl in H.
+  injection H; clear H; intros; subst.
+  destruct w; try discriminate.
+  destruct b0; try discriminate.
+  destruct i; try discriminate.
+  simpl in H.
+  injection H; clear H; intros; subst.
+  clear H1.
+  simpl.
+  pose proof H0.
+  apply Hvalid3 in H0.
+  destruct H0 as [τ [Ho1 [Ho2 [Ho3 Ho4]]]].
+  simpl in *.
+  unfold typed in Ho1.
+  unfold index_typed in Ho1.
+  destruct Ho1 as [β Ho1].
+  rewrite lookup_fmap in Ho1.
+  rewrite H in Ho1.
+  simpl in Ho1.
+  injection Ho1; clear Ho1; intros; subst.
+  simpl in Ho3.
+  unfold typed in Ho3.
+  unfold ctree_typed in Ho3.
+  simpl in Ho3.
+  inversion Ho3; subst.
+  rewrite fmap_length.
+  assert (Datatypes.length l = 32). {
+    rewrite H4.
+    reflexivity.
+  }
+  rewrite H0.
+  assert (natmap.to_bools 32
+              {|
+              mapset.mapset_car := natmap.list_to_natmap
+                                     [Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some ()] |} =
+    [true; true; true; true; true; true; true; true;
+     true; true; true; true; true; true; true; true;
+     true; true; true; true; true; true; true; true;
+     true; true; true; true; true; true; true; true]).
+  reflexivity.
+  rewrite H1.
+Lemma zip_with_pbit_unlock_if_list_fmap_pbit_lock (l: list (pbit K)):
+  Forall (λ γb, Some Writable ⊆ pbit_kind γb) l ->
+  zip_with pbit_unlock_if (pbit_lock <$> l) (replicate (Datatypes.length l) true) = l.
+induction l; intros; try reflexivity.
+simpl.
+unfold fmap in IHl.
+rewrite IHl.
+- destruct a.
+  simpl.
+  inversion H; subst.
+  destruct tagged_perm.
+  + destruct l0; simpl in *.
+    * unfold perm_kind in H2.
+      elim H2.
+    * reflexivity.
+  + elim H2.
+- inversion H; subst; assumption.
+Qed.
+  pose proof (zip_with_pbit_unlock_if_list_fmap_pbit_lock l H'w).
+  rewrite H0 in H5.
+  simpl in H5.
+  rewrite H5.
+  reflexivity.
+- rewrite lookup_singleton_ne; try congruence.
+  rewrite lookup_alter_ne; try congruence.
+Qed.
+
+Lemma lockset_union_right_id (Ω: lockset): Ω ∪ ∅ = Ω.
+apply lockset_eq.
+intros.
+solve_elem_of.
+Qed.
 
 Lemma call_main_safe: forall S, rtc (cstep Γ δ) (State [] (Call "main" []) ∅) S -> ~ is_undef_state S.
 intros.
@@ -305,7 +462,107 @@ inv_rcstep; clear y.
   }
   inv_rcstep.
   clear y.
-  inv_rcsteps H1. {
+  rewrite lockset_union_right_id in H1.
+  rewrite lockset_union_right_id in H1.
+  set (m1:=mem_alloc Γ o false perm_full (val_new Γ sintT%BT) ∅).
+  set (m2:=<[addr_top o sintT%BT:=intV{sintT} 3]{Γ}>m1).
+  assert (Γ\ δ\ [] ⊢ₛ State
+                   [CStmt (□ ;; ret (cast{sintT%BT} (load (var 0))));
+                   CLocal o sintT%BT; CParams "main" []]
+                   (Stmt ↗ (var 0 ::= cast{sintT%BT} (# intV{sintT} 3)))
+                   (mem_unlock (lock_singleton Γ (addr_top o sintT%BT))
+                      (mem_lock Γ (addr_top o sintT%BT)
+                         m2)) ⇒* S).
+  exact H1.
+  clear H1.
+  assert (m1_valid: ✓{Γ} m1). {
+    apply mem_alloc_valid' with (τ:=sintT%T).
+    - apply Γ_valid.
+    - apply cmap_empty_valid'.
+    - unfold dom.
+      unfold cmap_dom.
+      simpl.
+      rewrite dom_empty_L.
+      apply not_elem_of_empty.
+    - apply perm_full_valid.
+    - apply perm_full_mapped.
+    - rewrite val_new_base. simpl.
+      apply VBase_typed.
+      constructor.
+      + constructor.
+      + congruence.
+  }
+  assert (typeof_o: '{m1} !! o = Some (sintT%T, false)). {
+    unfold m1.
+    rewrite mem_alloc_memenv_of with (Δ:=∅) (τ:=sintT%T).
+    - rewrite lookup_insert. reflexivity.
+    - apply Γ_valid.
+    - apply val_new_typed.
+      + apply Γ_valid.
+      + constructor.
+        constructor.
+  }
+  assert (a_typed: (Γ, '{m1}) ⊢ addr_top o sintT%BT : sintT%PT). {
+    constructor.
+    - unfold typed.
+      unfold index_typed.
+      exists false.
+      apply typeof_o.
+    - constructor.
+      constructor.
+    - constructor.
+    - reflexivity.
+    - constructor.
+      simpl.
+      lia.
+    - apply Nat.divide_0_r.
+    - constructor.
+  }
+  assert (a_writable: mem_writable Γ (addr_top o sintT%BT) m1). {
+    apply mem_alloc_writable_top with (Δ:=∅).
+    - apply Γ_valid.
+    - rewrite val_new_base. simpl.
+      apply VBase_typed.
+      constructor.
+      + constructor.
+      + congruence.
+    - rewrite perm_kind_full.
+      reflexivity.
+  }
+  assert (intV_3_typed: (Γ, '{m1}) ⊢ (intV{sintT} 3 : val K) : (sintT%BT : type K)). {
+    apply VBase_typed.
+    constructor.
+    constructor.
+    - unfold int_lower. simpl.
+      lia.
+    - unfold int_upper. simpl. lia.
+  }
+  assert (m2_valid: ✓{Γ} m2). {
+    apply mem_insert_valid' with (τ:=sintT%T).
+    - apply Γ_valid.
+    - apply m1_valid.
+    - apply a_typed.
+    - apply a_writable.
+    - apply intV_3_typed.
+  }
+  assert (typeof_o_m2: '{m2} !! o = Some (sintT%T, false)). {
+    unfold m2.
+    rewrite mem_insert_memenv_of with (Δ:='{m1}) (τ:=sintT%T).
+    - apply typeof_o.
+    - apply Γ_valid.
+    - apply m1_valid.
+    - apply a_typed.
+    - apply a_writable.
+    - apply intV_3_typed.
+  }
+  assert (a_writable_m2: mem_writable Γ (addr_top o sintT%BT) m2). {
+    unfold m2.
+    apply mem_insert_writable with (Δ:='{m1}) (τ2:=sintT%T); try assumption.
+    - apply Γ_valid.
+    - left; reflexivity.
+  }
+  rewrite mem_unlock_lock_singleton in H; try assumption.
+  inv_rcsteps H. {
     inversion 1.
     elim (is_Some_None H).
   }
@@ -367,20 +624,52 @@ apply H1.
 apply Expr_pure with (1:=H) (2:=H2) (4:=H0).
 reflexivity.
 Qed.
-  eapply Expr_pure' with (1:=H1).
-  + rewrite right_id_L.
-    rewrite right_id_L.
-    rewrite right_id_L.
+  eapply Expr_pure' with (1:=H1); clear H1. {
     simpl.
     rewrite option_guard_True.
-    simpl.
-    rewrite option_guard_True.
-    simpl.
+    + unfold m2.
+      simpl.
+      rewrite mem_lookup_insert with (Δ:='{m1}) (τ:=sintT%T); try assumption.
+      * simpl.
+        reflexivity.
+      * apply Γ_valid.
+      * constructor.
+    + apply mem_insert_forced.
+  }
+  intros.
+  unfold int_cast in H.
+  unfold arch_int_env in H.
+  unfold int_pre_cast in H.
+  simpl in H.
+  inv_rcsteps H. {
+    inversion 1.
+    elim (is_Some_None H).
+  }
+  inv_rcstep.
+  rewrite mem_unlock_empty in H1.
   inv_rcsteps H1. {
     inversion 1.
     elim (is_Some_None H).
   }
-
+  inv_rcstep.
+  inv_rcsteps H1. {
+    inversion 1.
+    elim (is_Some_None H).
+  }
+  inv_rcstep.
+    inv_rcsteps H1. {
+    inversion 1.
+    elim (is_Some_None H).
+  }
+  inv_rcstep.
+  inv_rcsteps H1. {
+    inversion 1.
+    elim (is_Some_None H).
+  }
+  inv_rcstep.
+- elim H1; clear H0 H1 H2.
+  eapply ehsafe_step.
+  constructor.
   
 
 Goal forall S, rtc (cstep Γ δ) S0 S -> ~ is_undef_state S.
