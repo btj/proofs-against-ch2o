@@ -5,6 +5,10 @@ Require Export ch2o.separation.permissions.
 Require Export ch2o.core_c.expressions.
 Require Export ch2o.core_c.expression_eval.
 Require Export ch2o.core_c.restricted_smallstep.
+Require Export ch2o.core_c.expression_eval_smallstep.
+Require Export ch2o.abstract_c.natural_type_environment.
+Require Export ch2o.abstract_c.architecture_spec.
+Require Export ch2o.abstract_c.architectures.
 
 Notation store := (list (option Z)).
 
@@ -185,7 +189,7 @@ Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
 
 Lemma eval_sound `{EnvSpec K} (Γ: env K) st e z ρ m:
   eval st e z ->
-  mem_stack Γ '{m} ρ st m ->
+  mem_stack Γ '{m} ρ st (cmap_erase m) ->
   ⟦ e ⟧ Γ ρ m = Some (inr (intV{sintT} z)).
 intros.
 destruct H1.
@@ -198,9 +202,11 @@ destruct H1.
   rewrite Ho.
   simpl.
   rewrite option_guard_True.
-  + rewrite mem_stack_lookup_mem with (1:=H2) (2:=H1) (3:=Ho).
+  + rewrite <- mem_lookup_erase.
+    rewrite mem_stack_lookup_mem with (1:=H2) (2:=H1) (3:=Ho).
     reflexivity.
-  + apply mem_stack_forced with (1:=H2) (2:=H1) (3:=Ho).
+  + rewrite <- mem_forced_erase.
+    apply mem_stack_forced with (1:=H2) (2:=H1) (3:=Ho).
 Qed.
 
 Inductive outcome := onormal(s: store) | oreturn(z: Z).
@@ -213,7 +219,9 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
   exec (None::st) s (oreturn z) ->
   exec st (local{sintT%BT} s) (oreturn z)
 | exec_assign st i e z:
+  i < length st ->
   eval st e z ->
+  int_cast_ok sintT z ->
   exec st (var i ::= cast{sintT%BT} e) (onormal (<[i:=Some z]>st))
 | exec_seq st s1 st' s2 O:
   exec st s1 (onormal st') ->
@@ -258,7 +266,534 @@ destruct (decide (o = i)).
   + reflexivity.
 Qed.
 
-Lemma bigstep_sound_lemma `{EnvSpec K} Γ δ st s O S (P: Prop):
+Definition A: architecture := {|
+  arch_sizes := architectures.lp64;
+  arch_big_endian := false;
+  arch_char_signedness := Signed;
+  arch_alloc_can_fail := false
+|}.
+Notation K := (arch_rank A).
+
+Lemma mem_lock_cmap (Γ: env K) o (m: indexmap (cmap_elem K (pbit K))):
+  mem_lock Γ (addr_top o sintT%BT) (CMap m) =
+  CMap (alter (cmap_elem_map (ctree_map pbit_lock)) o m).
+reflexivity.
+Qed.
+
+Lemma zip_with_pbit_unlock_if_list_fmap_pbit_lock (l: list (pbit K)):
+  Forall (λ γb, Some Writable ⊆ pbit_kind γb) l ->
+  zip_with pbit_unlock_if (pbit_lock <$> l) (replicate (Datatypes.length l) true) = l.
+induction l; intros; try reflexivity.
+simpl.
+unfold fmap in IHl.
+rewrite IHl.
+- destruct a.
+  simpl.
+  inversion H; subst.
+  destruct tagged_perm.
+  + destruct l0; simpl in *.
+    * unfold perm_kind in H2.
+      elim H2.
+    * reflexivity.
+  + elim H2.
+- inversion H; subst; assumption.
+Qed.
+
+Lemma mem_unlock_lock_singleton (Γ: env K) o (m: mem K):
+  ✓{Γ} m ->
+  '{m} !! o = Some (sintT%T, false) ->
+  mem_writable Γ (addr_top o sintT%BT) m ->
+  mem_unlock
+    (lock_singleton Γ (addr_top o sintT%BT))
+    (mem_lock Γ (addr_top o sintT%BT) m) = m.
+destruct m as [m].
+intros Hvalid. intros.
+destruct Hvalid as [Hvalid1 [Hvalid2 Hvalid3]].
+simpl in *.
+assert (forall (m1: indexmap (cmap_elem K (pbit K))) m2, m1 = m2 -> CMap m1 = CMap m2). { intros; congruence. }
+apply H1.
+apply map_eq.
+intro i.
+rewrite lookup_merge.
+2:reflexivity.
+destruct (decide (i = o)).
+- subst.
+  rewrite lookup_singleton.
+  rewrite lookup_alter.
+  destruct H0 as [w [Hw H'w]].
+  simpl in *.
+  unfold cmap_lookup in Hw.
+  simpl in Hw.
+  case_eq (m !! o); intros; rewrite H0 in Hw; try discriminate.
+  destruct c; try discriminate.
+  simpl in Hw.
+  injection Hw; clear Hw; intros; subst.
+  simpl.
+  rewrite lookup_fmap in H.
+  rewrite H0 in H.
+  simpl in H.
+  injection H; clear H; intros; subst.
+  destruct w; try discriminate.
+  destruct b0; try discriminate.
+  destruct i; try discriminate.
+  simpl in H.
+  injection H; clear H; intros; subst.
+  clear H1.
+  simpl.
+  pose proof H0.
+  apply Hvalid3 in H0.
+  destruct H0 as [τ [Ho1 [Ho2 [Ho3 Ho4]]]].
+  simpl in *.
+  unfold typed in Ho1.
+  unfold index_typed in Ho1.
+  destruct Ho1 as [β Ho1].
+  rewrite lookup_fmap in Ho1.
+  rewrite H in Ho1.
+  simpl in Ho1.
+  injection Ho1; clear Ho1; intros; subst.
+  simpl in Ho3.
+  unfold typed in Ho3.
+  unfold ctree_typed in Ho3.
+  simpl in Ho3.
+  inversion Ho3; subst.
+  rewrite fmap_length.
+  assert (Datatypes.length l = 32). {
+    rewrite H4.
+    reflexivity.
+  }
+  rewrite H0.
+  assert (natmap.to_bools 32
+              {|
+              mapset.mapset_car := natmap.list_to_natmap
+                                     [Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some (); Some (); 
+                                     Some (); Some ()] |} =
+    [true; true; true; true; true; true; true; true;
+     true; true; true; true; true; true; true; true;
+     true; true; true; true; true; true; true; true;
+     true; true; true; true; true; true; true; true]).
+  reflexivity.
+  rewrite H1.
+  pose proof (zip_with_pbit_unlock_if_list_fmap_pbit_lock l H'w).
+  rewrite H0 in H5.
+  simpl in H5.
+  rewrite H5.
+  reflexivity.
+- rewrite lookup_singleton_ne; try congruence.
+  rewrite lookup_alter_ne; try congruence.
+Qed.
+
+Lemma lockset_union_right_id (Ω: lockset): Ω ∪ ∅ = Ω.
+apply lockset_eq.
+intros.
+solve_elem_of.
+Qed.
+
+Lemma cons_snoc0 {A} x (xs: list A): exists y ys, x::xs = (ys ++ [y])%list.
+revert x.
+induction xs.
+- intros.
+  exists x.
+  exists [].
+  reflexivity.
+- intros.
+  destruct (IHxs a) as [y [ys Hyys]].
+  rewrite Hyys.
+  exists y.
+  exists (x::ys).
+  reflexivity.
+Qed.
+
+Lemma expr_eval_pure (Γ: env K) ρ e1 m e2 m2 (E: ectx K) ν:
+  Γ\ ρ ⊢ₕ e1, m ⇒ e2, m2 ->
+  ⟦ subst E e1 ⟧ Γ ρ m = Some ν ->
+  m2 = m.
+intros.
+apply expr_eval_subst in H0.
+destruct H0 as [ν' [Hν' _]].
+apply symmetry.
+apply ehstep_expr_eval_mem with (1:=H) (2:=Hν').
+Qed.
+
+Lemma expr_eval_complete_subst (Γ: env K) ρ e1 m e2 m2 (E: ectx K) ν:
+  Γ\ ρ ⊢ₕ e1, m ⇒ e2, m2 ->
+  ⟦ subst E e1 ⟧ Γ ρ m = Some ν ->
+  ⟦ subst E e2 ⟧ Γ ρ m = Some ν.
+intros.
+pose proof H0.
+apply expr_eval_subst in H0.
+destruct H0 as [ν' [Hν' _]].
+assert (m = m2). {
+  apply ehstep_expr_eval_mem with (1:=H) (2:=Hν').
+}
+subst m2.
+assert (⟦ e2 ⟧ Γ ρ m = Some ν'). {
+  apply ehstep_expr_eval with (1:=H) (2:=Hν') (3:=Hν').
+}
+rewrite subst_preserves_expr_eval with (e4:=e2) in H1.
+- assumption.
+- congruence.
+Qed.
+
+Lemma expr_eval_call_None {Γ: env K} {ρ m} {E: ectx K} {f args ν}:
+  ⟦ subst E (ECall f args) ⟧ Γ ρ m = Some ν -> False.
+intros.
+apply expr_eval_subst in H.
+destruct H.
+destruct H.
+simpl in H.
+discriminate.
+Qed.
+
+Lemma expr_eval_no_locks (Γ: env K) ρ m Ω ν ν':
+  ⟦ %#{Ω} ν ⟧ Γ ρ m = Some ν' -> (%#{Ω} ν = %# ν')%E.
+intros.
+simpl in H.
+unfold mguard in H.
+unfold option_guard in H.
+destruct (lockset_eq_dec Ω ∅); congruence.
+Qed.
+
+Lemma assign_pure (Γ: env K) δ ρ S0 S:
+  Γ\ δ\ ρ ⊢ₛ S0 ⇒* S ->
+  is_final_state S ->
+  forall k el er m νl νr,
+  S0 = State k (Expr (el ::= er)) m ->
+  ⟦ el ⟧ Γ (rlocals ρ k) m = Some νl ->
+  ⟦ er ⟧ Γ (rlocals ρ k) m = Some νr ->
+  Γ\ δ\ ρ ⊢ₛ State k (Expr (%# νl ::= %# νr)) m ⇒* S.
+induction 1; intros; subst. {
+  elim H.
+}
+inversion H; clear H; subst.
+- (* head reduction *)
+  destruct E.
+  + (* empty evaluation context *)
+    simpl in *.
+    subst.
+    inversion H8; subst.
+    simpl in *.
+    unfold mguard in H4.
+    unfold option_guard in H4.
+    case_eq (lockset_eq_dec Ω2 ∅); intros.
+    * rewrite H in H4.
+      injection H4; clear H4; intros; subst.
+      unfold mguard in H3; unfold option_guard in H3.
+      case_eq (lockset_eq_dec Ω1 ∅); intros.
+      -- rewrite H2 in H3.
+         injection H3; clear H3; intros; subst.
+         clear H H2.
+         eapply rtc_l.
+         ++ eapply rcstep_expr_head with (E:=[]).
+            eassumption.
+         ++ eassumption.
+      -- rewrite H2 in H3; discriminate.
+    * rewrite H in H4; discriminate.
+  + (* nonempty evaluation context *)
+    destruct (cons_snoc0 e E) as [e' [E' H']].
+    rewrite H' in *.
+    clear H' e E.
+    rewrite subst_snoc in H6.
+    destruct e'; try discriminate.
+    * (* lhs *)
+      simpl in H6.
+      injection H6; clear H6; intros; subst.
+      rewrite subst_snoc in H0.
+      rewrite subst_snoc in IHrtc.
+      simpl in *.
+      assert (m2 = m). {
+        apply expr_eval_pure with (1:=H8) (2:=H3).
+      }
+      subst m2.
+      apply expr_eval_complete_subst with (1:=H8) in H3.
+      apply IHrtc with (3:=H3) (4:=H4); trivial.
+    * (* rhs *)
+      simpl in *.
+      injection H6; clear H6; intros; subst.
+      rewrite subst_snoc in H0.
+      rewrite subst_snoc in IHrtc.
+      simpl in *.
+      assert (m2 = m). {
+        apply expr_eval_pure with (1:=H8) (2:=H4).
+      }
+      subst m2.
+      apply expr_eval_complete_subst with (1:=H8) in H4.
+      apply IHrtc with (3:=H3) (4:=H4); trivial.
+- (* function call *)
+  destruct E.
+  + (* E = [] *)
+    simpl in *.
+    discriminate.
+  + destruct (cons_snoc0 e0 E) as [e' [E' H']].
+    rewrite H' in *.
+    clear H' e0 E.
+    rewrite subst_snoc in H6.
+    destruct e'; try discriminate; simpl in *; injection H6; clear H6; intros; subst.
+    * (* lhs *)
+      elim (expr_eval_call_None H3).
+    * (* rhs *)
+      elim (expr_eval_call_None H4).
+- (* undef *)
+  destruct E.
+  * (* E = [] *)
+    simpl in *.
+    subst.
+    eapply rtc_l.
+    2: eassumption.
+    inversion H8; subst.
+    destruct H5.
+    destruct H7.
+    rewrite expr_eval_no_locks with (1:=H3) in *.
+    rewrite expr_eval_no_locks with (1:=H4) in *.
+    apply rcstep_expr_undef with (E:=[]).
+    -- assumption.
+    -- assumption.
+  * (* E <> [] *)
+    destruct (cons_snoc0 e0 E) as [e' [E' H']].
+    rewrite H' in *.
+    clear H' e0 E.
+    rewrite subst_snoc in H5.
+    destruct e'; try discriminate; simpl in *; injection H5; clear H5; intros; subst.
+    -- (* lhs *)
+       destruct expr_eval_subst_ehstep with (1:=H3) (2:=H8).
+       destruct H.
+       elim H9.
+       eapply ehsafe_step.
+       apply H.
+    -- (* rhs *)
+       destruct expr_eval_subst_ehstep with (1:=H4) (2:=H8).
+       destruct H.
+       elim H9.
+       eapply ehsafe_step.
+       apply H.
+Qed.
+
+Lemma assign_pure' (Γ: env K) δ ρ S k el er m νl νr P:
+  Γ\ δ\ ρ ⊢ₛ (State k (Expr (el ::= er)) m) ⇒* S ->
+  is_final_state S ->
+  ⟦ el ⟧ Γ (rlocals ρ k) m = Some νl ->
+  ⟦ er ⟧ Γ (rlocals ρ k) m = Some νr ->
+  (Γ\ δ\ ρ ⊢ₛ State k (Expr (%# νl ::= %# νr)) m ⇒* S ->
+   P) ->
+  P.
+intros.
+apply X.
+apply assign_pure with (1:=H) (2:=H0) (4:=H1) (5:=H2).
+reflexivity.
+Qed.
+
+Lemma Expr_pure (Γ: env K) δ ρ S0 S:
+  Γ\ δ\ ρ ⊢ₛ S0 ⇒* S ->
+  is_final_state S ->
+  forall k e m ν,
+  S0 = State k (Expr e) m ->
+  ⟦ e ⟧ Γ (rlocals ρ k) m = Some ν ->
+  Γ\ δ\ ρ ⊢ₛ State k (Expr (%# ν)) m ⇒* S.
+intro Hrtc.
+pose proof Hrtc.
+induction H; intros; subst. {
+  elim H.
+}
+assert (forall Ω ν', e = (%#{Ω} ν')%E -> Γ\ δ\ ρ ⊢ₛ State k (Expr (%# ν)) m ⇒* z). {
+  intros.
+  subst.
+  simpl in H3.
+  unfold mguard in H3.
+  unfold option_guard in H3.
+  destruct (lockset_eq_dec Ω ∅).
+  2: discriminate.
+  injection H3; clear H3; intros; subst.
+  assumption.
+}
+clear Hrtc.
+inversion H; clear H; subst; try (eapply H2; reflexivity); clear H2.
+- (* head reduction *)
+  assert (m2 = m). {
+    apply expr_eval_pure with (1:=H8) (2:=H3).
+  }
+  subst m2.
+  eapply IHrtc; try trivial.
+  apply expr_eval_complete_subst with (1:=H8) (2:=H3).
+- (* function call *)
+  elim (expr_eval_call_None H3).
+- elim H9.
+  eapply expr_eval_subst_ehsafe; eassumption.
+Qed.
+
+Lemma Expr_pure' (Γ: env K) δ ρ S k e m ν:
+  Γ\ δ\ ρ ⊢ₛ (State k (Expr e) m) ⇒* S ->
+  is_final_state S ->
+  ⟦ e ⟧ Γ (rlocals ρ k) m = Some ν ->
+  Γ\ δ\ ρ ⊢ₛ State k (Expr (%# ν)) m ⇒* S.
+intros.
+apply Expr_pure with (1:=H) (2:=H0) (4:=H1).
+reflexivity.
+Qed.
+
+Lemma Hint_coding: arch_int_coding A = (@int_coding 
+                               (arch_rank A)
+                               (@env_type_env 
+                                  (arch_rank A) 
+                                  (arch_env A))).
+reflexivity.
+Qed.
+
+Lemma mem_stack_typed `{EnvSpec K} Γ Δ ρ st m i o:
+  mem_stack Γ Δ ρ st m ->
+  ρ !! i = Some (o, sintT%T) ->
+  (Γ, Δ) ⊢ addr_top o sintT%BT : sintT%PT.
+intro.
+revert i.
+induction H1; intros.
+- discriminate.
+- destruct i.
+  + simpl in *.
+    injection H7; clear H7; intros; subst.
+    apply mem_singleton_typed_addr_typed with (1:=H4).
+  + simpl in H7.
+    apply IHmem_stack with (1:=H7).
+Qed.
+
+Lemma mem_stack_writable `{EnvSpec K} Γ Δ ρ st m i o:
+  mem_stack Γ Δ ρ st m ->
+  ρ !! i = Some (o, sintT%T) ->
+  mem_writable Γ (addr_top o sintT%BT) m.
+intro.
+revert i.
+induction H1; intros.
+- discriminate.
+- destruct i; simpl in H7.
+  + injection H7; clear H7; intros; subst.
+    eapply mem_writable_subseteq.
+    * assumption.
+    * apply cmap_valid_subseteq with (2:=H3).
+      -- assumption.
+      -- apply sep_union_subseteq_l.
+         assumption.
+    * apply sep_union_subseteq_l; assumption.
+    * apply mem_writable_singleton with (3:=H4).
+      -- assumption.
+      -- reflexivity.
+  + eapply mem_writable_subseteq.
+    * assumption.
+    * apply cmap_valid_subseteq with (2:=H3).
+      -- assumption.
+      -- apply sep_union_subseteq_r.
+         assumption.
+    * apply sep_union_subseteq_r; assumption.
+    * apply IHmem_stack with (1:=H7).
+Qed.
+
+Lemma mem_stack_insert `{EnvSpec K} Γ Δ ρ st m i o z:
+  mem_stack Γ Δ ρ st m ->
+  ρ !! i = Some (o, sintT%T) ->
+  int_typed z sintT ->
+  cmap_valid (Γ, Δ) (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m) ->
+  mem_stack Γ Δ ρ (<[i:=Some z]> st)
+    (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m).
+intro.
+revert i.
+induction H1; intros.
+- discriminate.
+- destruct i.
+  + simpl in H7.
+    injection H7; clear H7; intros; subst.
+    assert (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m ⊥ m'). {
+            apply mem_insert_disjoint with (Δ1:=Δ) (τ1:=sintT%T).
+            ** assumption.
+            ** apply cmap_valid_subseteq with (2:=H3).
+               --- assumption.
+               --- apply sep_union_subseteq_l; assumption.
+            ** rewrite sep_disjoint_list_double in H6.
+               assumption.
+            ** apply mem_singleton_typed_addr_typed with (1:=H4).
+            ** apply mem_writable_singleton with (3:=H4).
+               --- assumption.
+               --- reflexivity.
+            ** constructor.
+               constructor.
+               assumption.
+    }
+    assert (Hunion: <[addr_top o sintT%BT:=intV{sintT} z]{Γ}> (m ∪ m') = <[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m ∪ m'). {
+      apply mem_insert_union with (Δ1:=Δ) (τ1:=sintT%T).
+         ++ assumption.
+         ++ apply cmap_valid_subseteq with (2:=H3).
+            +++ assumption.
+            +++ apply sep_union_subseteq_l; assumption.
+         ++ rewrite sep_disjoint_list_double in H6; assumption.
+         ++ apply mem_singleton_typed_addr_typed with (1:=H4).
+         ++ apply mem_writable_singleton with (3:=H4).
+                   +++ assumption.
+                   +++ reflexivity.
+         ++ constructor; constructor; assumption.
+    }
+    rewrite Hunion.
+    * apply mem_stack_alloc.
+      -- assumption.
+      -- assumption.
+      -- rewrite Hunion in H9; assumption.
+      -- assert (Hz: intV{sintT} z = freeze true (intV{sintT} z)). reflexivity.
+         rewrite Hz at 1.
+         apply mem_insert_singleton with (3:=H4).
+         ++ assumption.
+         ++ reflexivity.
+         ++ constructor; constructor; assumption.
+      -- assumption.
+      -- rewrite sep_disjoint_list_double; assumption.
+  + simpl in H7.
+    assert (Hdisjoint: ⊥ [<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m'; m]). {
+      apply sep_disjoint_list_double.
+      apply mem_insert_disjoint with (Δ1:=Δ) (τ1:=sintT%T).
+      - assumption.
+      - apply cmap_valid_subseteq with (2:=H3).
+            +++ assumption.
+            +++ apply sep_union_subseteq_r; assumption.
+      - apply symmetry.
+        rewrite sep_disjoint_list_double in H6; assumption.
+      - apply mem_stack_typed with (1:=H5) (2:=H7).
+      - apply mem_stack_writable with (1:=H5) (2:=H7).
+      - constructor; constructor; assumption.
+    }
+    assert (Hunion: <[addr_top o sintT%BT:=intV{sintT} z]{Γ}> (m ∪ m') = m ∪ <[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m'). {
+      rewrite sep_commutative. 2:assumption.
+      rewrite mem_insert_union with (Δ1:=Δ) (τ1:=sintT%T).
+         ++ apply sep_commutative. assumption.
+         ++ assumption.
+         ++ apply cmap_valid_subseteq with (2:=H3).
+            +++ assumption.
+            +++ apply sep_union_subseteq_r; assumption.
+         ++ apply symmetry; rewrite sep_disjoint_list_double in H6; assumption.
+         ++ apply mem_stack_typed with (1:=H5) (2:=H7).
+         ++ apply mem_stack_writable with (1:=H5) (2:=H7).
+         ++ constructor; constructor; assumption.
+    }
+    rewrite Hunion.
+    * apply mem_stack_alloc.
+      -- assumption.
+      -- assumption.
+      -- rewrite Hunion in H9; assumption.
+      -- assumption.
+      -- apply IHmem_stack; try assumption.
+         apply cmap_valid_subseteq with (2:=H9); try assumption.
+         rewrite Hunion.
+         apply sep_union_subseteq_r.
+         rewrite sep_disjoint_list_double.
+         rewrite sep_disjoint_list_double in Hdisjoint.
+         apply symmetry; assumption.
+      -- rewrite sep_disjoint_list_double.
+         rewrite sep_disjoint_list_double in Hdisjoint.
+         apply symmetry; assumption.
+Qed.
+
+Lemma bigstep_sound_lemma (Γ: env K) δ st s O S (P: Prop):
   ✓ Γ ->
   is_final_state S ->
   exec st s O ->
@@ -275,6 +810,8 @@ Lemma bigstep_sound_lemma `{EnvSpec K} Γ δ st s O S (P: Prop):
    Γ\ δ\ [] ⊢ₛ State k (Stmt (⇈ intV{sintT} z) s) m' ⇒* S ->
    P) ->
   P.
+assert (H: True). exact I.
+assert (H0: True). exact I.
 intros HΓ HS.
 induction 1.
 - (* exec_local_normal *)
@@ -292,6 +829,7 @@ induction 1.
       destruct (decide (sintT%BT = voidT%BT)); try discriminate.
       reflexivity.
     }
+    rewrite <- Hint_coding in *.
     rewrite Hval_new in *.
     assert (Halloc_valid: ✓{Γ} (mem_alloc Γ o false perm_full (indetV sintT%BT) m)). {
       apply mem_alloc_valid' with (τ:=sintT%T).
@@ -353,6 +891,7 @@ induction 1.
           + discriminate.
       }
       rewrite mem_erase_alloc.
+      rewrite Hint_coding.
       rewrite Hmem_alloc.
       apply mem_stack_alloc.
       -- assumption.
@@ -436,6 +975,7 @@ induction 1.
       destruct (decide (sintT%BT = voidT%BT)); try discriminate.
       reflexivity.
     }
+    rewrite Hint_coding.
     rewrite Hval_new in *.
     assert (Halloc_valid: ✓{Γ} (mem_alloc Γ o false perm_full (indetV sintT%BT) m)). {
       apply mem_alloc_valid' with (τ:=sintT%T).
@@ -529,8 +1069,93 @@ induction 1.
     inv_rcstep.
     apply H5 with (z:=z0) (2:=H9).
     reflexivity.
-- 
-
+- (* exec_assign *)
+  intros.
+  inv_rcsteps H4. {
+    elim HS.
+  }
+  inv_rcstep.
+  clear y.
+  destruct (lookup_lt_is_Some_2 _ _ H1) as [mv Hmv].
+  destruct H5 as [Hvalid H5].
+  destruct (mem_stack_lookup_stack _ _ _ _ _ _ _ H5 Hmv) as [o Ho].
+  eapply assign_pure' with (1:=H9).
+  + assumption.
+  + simpl.
+    rewrite Ho.
+    simpl.
+    reflexivity.
+  + simpl.
+    rewrite eval_sound with (1:=H2). 2:assumption.
+    simpl.
+    rewrite option_guard_True.
+    * reflexivity.
+    * assumption.
+  + intros.
+    unfold int_cast in H4.
+    unfold arch_int_env in H4.
+    unfold int_pre_cast in H4.
+    simpl in H4.
+    inv_rcsteps H4. {
+      elim HS.
+    }
+    inv_rcstep.
+    inversion H8; subst.
+    * clear H8.
+      rewrite lockset_union_right_id in H10.
+      rewrite lockset_union_right_id in H10.
+      inv_rcsteps H10. {
+        elim HS.
+      }
+      inv_rcstep.
+      inversion H19; subst.
+      simpl in H10.
+      unfold int_cast in H10.
+      unfold arch_int_env in H10.
+      unfold int_pre_cast in H10.
+      simpl in H10.
+      assert ((Γ, '{m}) ⊢ addr_top o sintT%BT : sintT%PT). {
+        apply mem_stack_typed with (1:=H5) (2:=Ho).
+      }
+      assert (Hz_typed: (Γ, '{m}) ⊢ (intV{sintT} z: val K) : (sintT%BT: type K)). {
+        constructor.
+        constructor.
+        inversion H3.
+        constructor; assumption.
+      }
+      assert (Hinsert_valid: ✓{Γ} (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m)). {
+        apply mem_insert_valid' with (τ:=sintT%T); assumption.
+      }
+      assert (✓{Γ} (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m)). {
+        apply mem_insert_valid' with (τ:=sintT%T); assumption.
+      }
+      rewrite mem_unlock_lock_singleton in H10; try assumption.
+      -- apply H6 with (3:=H10) (st':=<[i:=Some z]>st).
+         ++ reflexivity.
+         ++ split.
+            ** assumption.
+            ** assert ('{<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m} = '{m}). {
+                 rewrite mem_insert_memenv_of with (Δ:='{m}) (τ:=sintT%T); try assumption.
+                 - reflexivity.
+               }
+               rewrite Hint_coding.
+               rewrite H12.
+               rewrite mem_erase_insert.
+               apply mem_stack_insert.
+               +++ assumption.
+               +++ assumption.
+               +++ assumption.
+               +++ assert (✓{Γ, '{(<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m)}} (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m)). {
+                         assumption.
+                   }
+                   rewrite <- H12.
+                   rewrite <- mem_erase_insert.
+                   apply cmap_erase_valid.
+                   assumption.
+      -- rewrite mem_insert_memenv_of with (Δ:='{m}) (τ:=sintT%T); try assumption.
+         ++ 
+     
+      
 Admitted.
 
 Theorem bigstep_sound `{Env K} s z:
