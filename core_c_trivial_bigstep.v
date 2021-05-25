@@ -800,7 +800,7 @@ induction H1; intros.
          apply symmetry; assumption.
 Qed.
 
-Lemma bigstep_sound_lemma (Γ: env K) δ st s O S (P: Prop):
+Lemma exec_sound_lemma (Γ: env K) δ st s O S (P: Prop):
   ✓ Γ ->
   is_final_state S ->
   exec st s O ->
@@ -1204,7 +1204,7 @@ induction 1.
   reflexivity.
 Qed.
 
-Theorem bigstep_sound Γ δ (s: stmt K) z S:
+Theorem exec_sound Γ δ (s: stmt K) z S:
   ✓ Γ ->
   exec [] s (oreturn z) ->
   is_final_state S ->
@@ -1212,7 +1212,7 @@ Theorem bigstep_sound Γ δ (s: stmt K) z S:
   exists m,
   S = State [] (Stmt (⇈ (intV{sintT} z)) s) m.
 intros.
-apply bigstep_sound_lemma with (1:=H) (2:=H1) (3:=H0) (4:=H2).
+apply exec_sound_lemma with (1:=H) (2:=H1) (3:=H0) (4:=H2).
 - split.
   + apply cmap_empty_valid.
     simpl.
