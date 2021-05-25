@@ -1204,10 +1204,30 @@ induction 1.
   reflexivity.
 Qed.
 
-Theorem bigstep_sound `{Env K} s z:
+Theorem bigstep_sound Γ δ (s: stmt K) z S:
+  ✓ Γ ->
   exec [] s (oreturn z) ->
-  forall Γ δ S,
+  is_final_state S ->
   Γ\ δ\ [] ⊢ₛ State [] (Stmt ↘ s) ∅ ⇒* S ->
   exists m,
-  Γ\ δ\ [] ⊢ₛ S ⇒* State [] (Stmt (⇈ (intV{sintT} z)) s) m.
-Admitted.
+  S = State [] (Stmt (⇈ (intV{sintT} z)) s) m.
+intros.
+apply bigstep_sound_lemma with (1:=H) (2:=H1) (3:=H0) (4:=H2).
+- split.
+  + apply cmap_empty_valid.
+    simpl.
+    rewrite fmap_empty.
+    apply memenv_empty_valid.
+  + rewrite cmap_erase_empty.
+    apply mem_stack_empty.
+    * assumption.
+    * simpl. rewrite fmap_empty.
+      apply memenv_empty_valid.
+- intros.
+  inv_rcsteps H5. elim H1. inv_rcstep.
+- intros.
+  injection H3; clear H3; intros; subst.
+  inv_rcsteps H4.
+  + exists m'; reflexivity.
+  + inv_rcstep.
+Qed.
