@@ -270,9 +270,8 @@ Lemma bigstep_sound_lemma `{EnvSpec K} Γ δ st s O S (P: Prop):
    mem_stack' Γ (rlocals [] k) st' m' ->
    Γ\ δ\ [] ⊢ₛ State k (Stmt ↗ s) m' ⇒* S ->
    P) ->
-  (forall z st' m',
+  (forall z m',
    O = oreturn z ->
-   mem_stack' Γ (rlocals [] k) st' m' ->
    Γ\ δ\ [] ⊢ₛ State k (Stmt (⇈ intV{sintT} z) s) m' ⇒* S ->
    P) ->
   P.
@@ -422,7 +421,116 @@ induction 1.
                    +++ reflexivity.
             ** eapply cmap_valid_sep_valid; rewrite mem_stack_erase with (1:=H18); apply mem_stack_valid with (1:=H18).
   + intros; discriminate.
+- (* exec_local_return *)
+  intros.
+  inv_rcsteps H2. {
+    elim HS.
+  }
+  inv_rcstep.
+  apply IHexec with (1:=H7).
+  + simpl.
+    unfold mem_stack' in *.
+    destruct H3 as [Hvalid H3].
+    assert (Hval_new: val_new Γ sintT%BT = indetV sintT). {
+      rewrite val_new_base.
+      destruct (decide (sintT%BT = voidT%BT)); try discriminate.
+      reflexivity.
+    }
+    rewrite Hval_new in *.
+    assert (Halloc_valid: ✓{Γ} (mem_alloc Γ o false perm_full (indetV sintT%BT) m)). {
+      apply mem_alloc_valid' with (τ:=sintT%T).
+      - assumption.
+      - assumption.
+      - assumption.
+      - apply perm_full_valid.
+      - apply perm_full_mapped.
+      - constructor. constructor.
+        + constructor.
+        + discriminate.
+    }
+    destruct (mem_alloc_singleton Γ '{mem_alloc Γ o false perm_full (indetV sintT%BT) m} (cmap_erase m) o false perm_full (indetV sintT) sintT%T) as [m2 [Hmem_alloc [Hdisjoint Hsingleton]]].
+    * assumption.
+    * apply cmap_erase_valid.
+      -- apply cmap_valid_weaken with (Γ1:=Γ) (Δ1:='{m}).
+         ++ assumption.
+         ++ assumption.
+         ++ reflexivity.
+         ++ rewrite mem_alloc_memenv_of with (Δ:='{m}) (τ:=sintT%T).
+            ** apply insert_subseteq.
+               rewrite <- cmap_dom_memenv_of in H2.
+                apply not_elem_of_dom with (1:=H2).
+            ** assumption.
+            ** constructor. constructor.
+               --- constructor.
+               --- discriminate.
+         ++ eapply cmap_valid_memenv_valid.
+            eassumption.
+    * rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+      -- apply mem_alloc_index_typed.
+      -- assumption.
+      -- constructor. constructor.
+         ++ constructor.
+         ++ discriminate.
+    * rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+      -- apply mem_alloc_index_alive.
+      -- assumption.
+      -- constructor. constructor.
+         ++ constructor.
+         ++ discriminate.
+    * intro.
+      apply cmap_dom_erase in H6.
+      tauto.
+    * apply perm_full_valid.
+    * apply perm_full_mapped.
+    * constructor. constructor.
+      -- constructor.
+      -- discriminate.
+    * split. {
+        apply mem_alloc_valid' with (τ:=sintT%T).
+        - assumption.
+        - assumption.
+        - assumption.
+        - apply perm_full_valid.
+        - apply perm_full_mapped.
+        - constructor. constructor.
+          + constructor.
+          + discriminate.
+      }
+      rewrite mem_erase_alloc.
+      rewrite Hmem_alloc.
+      apply mem_stack_alloc.
+      -- assumption.
+      -- eapply cmap_valid_memenv_valid; eassumption.
+      -- rewrite <- Hmem_alloc.
+         rewrite <- mem_erase_alloc.
+         apply cmap_erase_valid.
+         assumption.
+      -- assumption.
+      -- apply mem_stack_weaken_memenv with (Δ:='{m}).
+         ++ assumption.
+         ++ eapply cmap_valid_memenv_valid; eassumption.
+         ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
+            ** apply insert_subseteq.
+               rewrite <- cmap_dom_memenv_of in H2.
+               apply not_elem_of_dom with (1:=H2).
+            ** assumption.
+            ** constructor.
+               constructor.
+               --- constructor.
+               --- discriminate.
+      -- apply sep_disjoint_list_double; assumption.
+  + intros; discriminate.
+  + intros.
+    injection H6; clear H6; intros; subst.
+    simpl in *.
+    inv_rcsteps H8. {
+      elim HS.
+    }
+    inv_rcstep.
+    apply H5 with (z:=z0) (2:=H9).
+    reflexivity.
 - 
+
 Admitted.
 
 Theorem bigstep_sound `{Env K} s z:
