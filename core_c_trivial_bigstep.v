@@ -225,7 +225,7 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
   exec st (var i ::= cast{sintT%BT} e) (onormal (<[i:=Some z]>st))
 | exec_seq st s1 st' s2 O:
   exec st s1 (onormal st') ->
-  exec st s2 O ->
+  exec st' s2 O ->
   exec st (s1 ;; s2) O
 | exec_ret st e z:
   eval st e z ->
@@ -1168,6 +1168,20 @@ induction 1.
       -- constructor.
          ++ assumption.
          ++ reflexivity.
+- intros.
+  inv_rcsteps H1. {
+    elim HS.
+  }
+  inv_rcstep.
+  apply IHexec1 with (1:=H6) (2:=H2); intros.
+  + inv_rcsteps H7. elim HS. inv_rcstep.
+    simpl in *.
+    apply IHexec2 with (1:=H9) (2:=H5); intros.
+    * inv_rcsteps H8. elim HS. inv_rcstep.
+      apply H3 with (2:=H7); trivial.
+    * inv_rcsteps H7. elim HS. inv_rcstep.
+      eapply H4. reflexivity. eassumption.
+  + inv_rcsteps H5. elim HS. inv_rcstep.
 - 
 Admitted.
 
