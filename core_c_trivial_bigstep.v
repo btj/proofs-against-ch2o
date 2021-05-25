@@ -229,6 +229,7 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
   exec st (s1 ;; s2) O
 | exec_ret st e z:
   eval st e z ->
+  int_cast_ok sintT z ->
   exec st (ret (cast{sintT%BT} e)) (oreturn z)
 .
 
@@ -1182,8 +1183,26 @@ induction 1.
     * inv_rcsteps H7. elim HS. inv_rcstep.
       eapply H4. reflexivity. eassumption.
   + inv_rcsteps H5. elim HS. inv_rcstep.
-- 
-Admitted.
+- intros.
+  inv_rcsteps H3. elim HS. inv_rcstep.
+  eapply Expr_pure' in H8; try assumption.
+  Focus 2. {
+    simpl.
+    rewrite eval_sound with (1:=H1).
+    - simpl.
+      rewrite option_guard_True. reflexivity.
+      assumption.
+    - destruct H4; assumption.
+  } Unfocus.
+  inv_rcsteps H8. elim HS. inv_rcstep.
+  rewrite mem_unlock_empty in H8.
+  unfold int_cast in H8.
+  unfold arch_int_env in H8.
+  unfold int_pre_cast in H8.
+  simpl in H8.
+  eapply H6 with (2:=H8).
+  reflexivity.
+Qed.
 
 Theorem bigstep_sound `{Env K} s z:
   exec [] s (oreturn z) ->
