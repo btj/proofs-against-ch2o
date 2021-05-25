@@ -12,39 +12,39 @@ Require Export ch2o.abstract_c.architectures.
 
 Notation store := (list (option Z)).
 
-Inductive mem_stack `{Env K} (Γ : env K) (Δ : memenv K): stack K -> store -> mem K -> Prop :=
-| mem_stack_empty:
+Inductive stack_mem `{Env K} (Γ : env K) (Δ : memenv K): stack K -> store -> mem K -> Prop :=
+| stack_mem_empty:
   ✓ Γ ->
   ✓{Γ} Δ ->
-  mem_stack Γ Δ [] [] ∅
-| mem_stack_alloc o mv m ρ st m':
+  stack_mem Γ Δ [] [] ∅
+| stack_mem_alloc o mv m ρ st m':
   ✓ Γ ->
   ✓{Γ} Δ ->
   ✓{Γ, Δ} (m ∪ m') ->
   mem_singleton Γ Δ (addr_top o sintT%T) false perm_full
     (match mv with None => indetV sintT%BT | Some z => intV{sintT} z end)
     sintT%T m ->
-  mem_stack Γ Δ ρ st m' ->
+  stack_mem Γ Δ ρ st m' ->
   ⊥[m; m'] ->
-  mem_stack Γ Δ ((o, sintT%T)::ρ) (mv::st) (m ∪ m')
+  stack_mem Γ Δ ((o, sintT%T)::ρ) (mv::st) (m ∪ m')
 .
 
-Lemma mem_stack_erase `{EnvSpec K} Γ Δ ρ st m:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_erase `{EnvSpec K} Γ Δ ρ st m:
+  stack_mem Γ Δ ρ st m ->
   cmap_erase m = m.
 induction 1.
 - apply cmap_erase_empty.
 - rewrite cmap_erase_union.
   rewrite mem_erase_singleton with (1:=H4).
-  rewrite IHmem_stack.
+  rewrite IHstack_mem.
   reflexivity.
 Qed.
 
-Definition mem_stack' `{Env K} Γ ρ st m :=
-  ✓{Γ} m /\ mem_stack Γ '{m} ρ st (cmap_erase m).
+Definition stack_mem' `{Env K} Γ ρ st m :=
+  ✓{Γ} m /\ stack_mem Γ '{m} ρ st (cmap_erase m).
 
-Lemma mem_stack_valid `{EnvSpec K} Γ Δ ρ st m:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_valid `{EnvSpec K} Γ Δ ρ st m:
+  stack_mem Γ Δ ρ st m ->
   ✓{Γ, Δ} m.
 induction 1.
 - apply cmap_empty_valid.
@@ -52,8 +52,8 @@ induction 1.
 - assumption.
 Qed.
 
-Lemma mem_stack_lookup_stack `{Env K} Γ Δ ρ st m i mv:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_lookup_stack `{Env K} Γ Δ ρ st m i mv:
+  stack_mem Γ Δ ρ st m ->
   st !! i = Some mv ->
   exists o, ρ !! i = Some (o, sintT%T).
 intro.
@@ -66,11 +66,11 @@ induction H0.
   + exists o. reflexivity.
   + simpl in H6.
     simpl.
-    apply IHmem_stack with (1:=H6).
+    apply IHstack_mem with (1:=H6).
 Qed.
 
-Lemma mem_stack_lookup_mem `{EnvSpec K} Γ Δ ρ st m i v o:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_lookup_mem `{EnvSpec K} Γ Δ ρ st m i v o:
+  stack_mem Γ Δ ρ st m ->
   st !! i = Some (Some v) ->
   ρ !! i = Some (o, sintT%T) ->
   m !!{Γ} addr_top o sintT%T = Some (intV{sintT} v).
@@ -96,30 +96,30 @@ destruct i; simpl in *.
       reflexivity.
 - eapply mem_lookup_subseteq with (m1:=m').
   + assumption.
-  + apply mem_stack_valid with (1:=H5).
+  + apply stack_mem_valid with (1:=H5).
   + apply sep_union_subseteq_r.
     assumption.
-  + apply IHmem_stack with (1:=H7) (2:=H8).
+  + apply IHstack_mem with (1:=H7) (2:=H8).
 Qed.
 
-Lemma mem_stack_weaken_memenv `{EnvSpec K} Γ Δ ρ st m Δ':
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_weaken_memenv `{EnvSpec K} Γ Δ ρ st m Δ':
+  stack_mem Γ Δ ρ st m ->
   ✓{Γ} Δ' ->
   Δ ⊆ Δ' ->
-  mem_stack Γ Δ' ρ st m.
+  stack_mem Γ Δ' ρ st m.
 induction 1; intros.
-- apply mem_stack_empty; try assumption.
-- apply mem_stack_alloc; try assumption.
+- apply stack_mem_empty; try assumption.
+- apply stack_mem_alloc; try assumption.
   + apply cmap_valid_weaken with (2:=H3); trivial.
   + apply mem_singleton_weaken with (4:=H4); try assumption.
     * reflexivity.
     * apply memenv_subseteq_forward.
       assumption.
-  + apply IHmem_stack; assumption.
+  + apply IHstack_mem; assumption.
 Qed.
 
-Lemma mem_stack_forced `{EnvSpec K} Γ Δ ρ st m i v o:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_forced `{EnvSpec K} Γ Δ ρ st m i v o:
+  stack_mem Γ Δ ρ st m ->
   st !! i = Some (Some v) ->
   ρ !! i = Some (o, sintT%T) ->
   mem_forced Γ (addr_top o sintT%T) m.
@@ -148,30 +148,30 @@ destruct i; simpl in *.
     * rewrite perm_kind_full. reflexivity.
 - eapply mem_forced_subseteq with (m1:=m').
   + assumption.
-  + apply mem_stack_valid with (1:=H5).
+  + apply stack_mem_valid with (1:=H5).
   + apply sep_union_subseteq_r.
     assumption.
-  + eapply IHmem_stack; eassumption.
-  + rewrite mem_stack_lookup_mem with (1:=H5) (2:=H7) (3:=H8).
+  + eapply IHstack_mem; eassumption.
+  + rewrite stack_mem_lookup_mem with (1:=H5) (2:=H7) (3:=H8).
     eexists; reflexivity.
 Qed.
 
-Lemma mem_stack_free `{EnvSpec K} Γ Δ ρ st m Δ':
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_free `{EnvSpec K} Γ Δ ρ st m Δ':
+  stack_mem Γ Δ ρ st m ->
   memenv_forward Δ Δ' ->
   ✓{Γ, Δ'} m ->
-  mem_stack Γ Δ' ρ st m.
+  stack_mem Γ Δ' ρ st m.
 induction 1; intros.
-- apply mem_stack_empty.
+- apply stack_mem_empty.
   + assumption.
   + apply cmap_valid_memenv_valid with (1:=H4).
-- apply mem_stack_alloc.
+- apply stack_mem_alloc.
   + assumption.
   + apply cmap_valid_memenv_valid with (1:=H8).
   + assumption.
   + apply mem_singleton_weaken with (4:=H4); try assumption.
     * reflexivity.
-  + apply IHmem_stack; try assumption.
+  + apply IHstack_mem; try assumption.
     * apply cmap_valid_subseteq with (2:=H8).
       -- assumption.
       -- apply sep_union_subseteq_r.
@@ -189,7 +189,7 @@ Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
 
 Lemma eval_sound `{EnvSpec K} (Γ: env K) st e z ρ m:
   eval st e z ->
-  mem_stack Γ '{m} ρ st (cmap_erase m) ->
+  stack_mem Γ '{m} ρ st (cmap_erase m) ->
   ⟦ e ⟧ Γ ρ m = Some (inr (intV{sintT} z)).
 intros.
 destruct H1.
@@ -197,16 +197,16 @@ destruct H1.
   reflexivity.
 - (* eval_load_var *)
   simpl.
-  pose proof (mem_stack_lookup_stack _ _ _ _ _ _ _ H2 H1).
+  pose proof (stack_mem_lookup_stack _ _ _ _ _ _ _ H2 H1).
   destruct H3 as [o Ho].
   rewrite Ho.
   simpl.
   rewrite option_guard_True.
   + rewrite <- mem_lookup_erase.
-    rewrite mem_stack_lookup_mem with (1:=H2) (2:=H1) (3:=Ho).
+    rewrite stack_mem_lookup_mem with (1:=H2) (2:=H1) (3:=Ho).
     reflexivity.
   + rewrite <- mem_forced_erase.
-    apply mem_stack_forced with (1:=H2) (2:=H1) (3:=Ho).
+    apply stack_mem_forced with (1:=H2) (2:=H1) (3:=Ho).
 Qed.
 
 Inductive outcome := onormal(s: store) | oreturn(z: Z).
@@ -653,8 +653,8 @@ Lemma Hint_coding: arch_int_coding A = (@int_coding
 reflexivity.
 Qed.
 
-Lemma mem_stack_typed `{EnvSpec K} Γ Δ ρ st m i o:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_typed `{EnvSpec K} Γ Δ ρ st m i o:
+  stack_mem Γ Δ ρ st m ->
   ρ !! i = Some (o, sintT%T) ->
   (Γ, Δ) ⊢ addr_top o sintT%BT : sintT%PT.
 intro.
@@ -666,11 +666,11 @@ induction H1; intros.
     injection H7; clear H7; intros; subst.
     apply mem_singleton_typed_addr_typed with (1:=H4).
   + simpl in H7.
-    apply IHmem_stack with (1:=H7).
+    apply IHstack_mem with (1:=H7).
 Qed.
 
-Lemma mem_stack_writable `{EnvSpec K} Γ Δ ρ st m i o:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_writable `{EnvSpec K} Γ Δ ρ st m i o:
+  stack_mem Γ Δ ρ st m ->
   ρ !! i = Some (o, sintT%T) ->
   mem_writable Γ (addr_top o sintT%BT) m.
 intro.
@@ -696,15 +696,15 @@ induction H1; intros.
       -- apply sep_union_subseteq_r.
          assumption.
     * apply sep_union_subseteq_r; assumption.
-    * apply IHmem_stack with (1:=H7).
+    * apply IHstack_mem with (1:=H7).
 Qed.
 
-Lemma mem_stack_insert `{EnvSpec K} Γ Δ ρ st m i o z:
-  mem_stack Γ Δ ρ st m ->
+Lemma stack_mem_insert `{EnvSpec K} Γ Δ ρ st m i o z:
+  stack_mem Γ Δ ρ st m ->
   ρ !! i = Some (o, sintT%T) ->
   int_typed z sintT ->
   cmap_valid (Γ, Δ) (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m) ->
-  mem_stack Γ Δ ρ (<[i:=Some z]> st)
+  stack_mem Γ Δ ρ (<[i:=Some z]> st)
     (<[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m).
 intro.
 revert i.
@@ -743,7 +743,7 @@ induction H1; intros.
          ++ constructor; constructor; assumption.
     }
     rewrite Hunion.
-    * apply mem_stack_alloc.
+    * apply stack_mem_alloc.
       -- assumption.
       -- assumption.
       -- rewrite Hunion in H9; assumption.
@@ -765,8 +765,8 @@ induction H1; intros.
             +++ apply sep_union_subseteq_r; assumption.
       - apply symmetry.
         rewrite sep_disjoint_list_double in H6; assumption.
-      - apply mem_stack_typed with (1:=H5) (2:=H7).
-      - apply mem_stack_writable with (1:=H5) (2:=H7).
+      - apply stack_mem_typed with (1:=H5) (2:=H7).
+      - apply stack_mem_writable with (1:=H5) (2:=H7).
       - constructor; constructor; assumption.
     }
     assert (Hunion: <[addr_top o sintT%BT:=intV{sintT} z]{Γ}> (m ∪ m') = m ∪ <[addr_top o sintT%BT:=intV{sintT} z]{Γ}> m'). {
@@ -778,17 +778,17 @@ induction H1; intros.
             +++ assumption.
             +++ apply sep_union_subseteq_r; assumption.
          ++ apply symmetry; rewrite sep_disjoint_list_double in H6; assumption.
-         ++ apply mem_stack_typed with (1:=H5) (2:=H7).
-         ++ apply mem_stack_writable with (1:=H5) (2:=H7).
+         ++ apply stack_mem_typed with (1:=H5) (2:=H7).
+         ++ apply stack_mem_writable with (1:=H5) (2:=H7).
          ++ constructor; constructor; assumption.
     }
     rewrite Hunion.
-    * apply mem_stack_alloc.
+    * apply stack_mem_alloc.
       -- assumption.
       -- assumption.
       -- rewrite Hunion in H9; assumption.
       -- assumption.
-      -- apply IHmem_stack; try assumption.
+      -- apply IHstack_mem; try assumption.
          apply cmap_valid_subseteq with (2:=H9); try assumption.
          rewrite Hunion.
          apply sep_union_subseteq_r.
@@ -806,10 +806,10 @@ Lemma bigstep_sound_lemma (Γ: env K) δ st s O S (P: Prop):
   exec st s O ->
   forall k m,
   Γ\ δ\ [] ⊢ₛ State k (Stmt ↘ s) m ⇒* S ->
-  mem_stack' Γ (rlocals [] k) st m ->
+  stack_mem' Γ (rlocals [] k) st m ->
   (forall st' m',
    O = onormal st' ->
-   mem_stack' Γ (rlocals [] k) st' m' ->
+   stack_mem' Γ (rlocals [] k) st' m' ->
    Γ\ δ\ [] ⊢ₛ State k (Stmt ↗ s) m' ⇒* S ->
    P) ->
   (forall z m',
@@ -829,7 +829,7 @@ induction 1.
   inv_rcstep.
   apply IHexec with (1:=H7).
   + simpl.
-    unfold mem_stack' in *.
+    unfold stack_mem' in *.
     destruct H3 as [Hvalid H3].
     assert (Hval_new: val_new Γ sintT%BT = indetV sintT). {
       rewrite val_new_base.
@@ -900,7 +900,7 @@ induction 1.
       rewrite mem_erase_alloc.
       rewrite Hint_coding.
       rewrite Hmem_alloc.
-      apply mem_stack_alloc.
+      apply stack_mem_alloc.
       -- assumption.
       -- eapply cmap_valid_memenv_valid; eassumption.
       -- rewrite <- Hmem_alloc.
@@ -908,7 +908,7 @@ induction 1.
          apply cmap_erase_valid.
          assumption.
       -- assumption.
-      -- apply mem_stack_weaken_memenv with (Δ:='{m}).
+      -- apply stack_mem_weaken_memenv with (Δ:='{m}).
          ++ assumption.
          ++ eapply cmap_valid_memenv_valid; eassumption.
          ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
@@ -947,8 +947,8 @@ induction 1.
          ++ rewrite cmap_erase_union.
             rewrite mem_free_singleton with (1:=H17). 2: reflexivity.
             rewrite sep_left_id.
-            rewrite mem_stack_erase with (1:=H18).
-            apply mem_stack_free with (1:=H18).
+            rewrite stack_mem_erase with (1:=H18).
+            apply stack_mem_free with (1:=H18).
             ** rewrite mem_free_memenv_of.
                apply mem_free_forward.
             ** apply cmap_valid_subseteq with (m2:=cmap_erase (mem_free o m')).
@@ -958,14 +958,14 @@ induction 1.
                    rewrite <- H13.
                    rewrite Hfree_union.
                    rewrite cmap_erase_union.
-                   rewrite mem_stack_erase with (1:=H18).
+                   rewrite stack_mem_erase with (1:=H18).
                    apply sep_union_subseteq_r.
                    apply sep_disjoint_list_double.
                    rewrite mem_free_singleton with (1:=H17).
                    +++ apply sep_disjoint_empty_l.
-                       eapply cmap_valid_sep_valid; eapply mem_stack_valid with (1:=H18).
+                       eapply cmap_valid_sep_valid; eapply stack_mem_valid with (1:=H18).
                    +++ reflexivity.
-            ** eapply cmap_valid_sep_valid; rewrite mem_stack_erase with (1:=H18); apply mem_stack_valid with (1:=H18).
+            ** eapply cmap_valid_sep_valid; rewrite stack_mem_erase with (1:=H18); apply stack_mem_valid with (1:=H18).
   + intros; discriminate.
 - (* exec_local_return *)
   intros.
@@ -975,7 +975,7 @@ induction 1.
   inv_rcstep.
   apply IHexec with (1:=H7).
   + simpl.
-    unfold mem_stack' in *.
+    unfold stack_mem' in *.
     destruct H3 as [Hvalid H3].
     assert (Hval_new: val_new Γ sintT%BT = indetV sintT). {
       rewrite val_new_base.
@@ -1045,7 +1045,7 @@ induction 1.
       }
       rewrite mem_erase_alloc.
       rewrite Hmem_alloc.
-      apply mem_stack_alloc.
+      apply stack_mem_alloc.
       -- assumption.
       -- eapply cmap_valid_memenv_valid; eassumption.
       -- rewrite <- Hmem_alloc.
@@ -1053,7 +1053,7 @@ induction 1.
          apply cmap_erase_valid.
          assumption.
       -- assumption.
-      -- apply mem_stack_weaken_memenv with (Δ:='{m}).
+      -- apply stack_mem_weaken_memenv with (Δ:='{m}).
          ++ assumption.
          ++ eapply cmap_valid_memenv_valid; eassumption.
          ++ rewrite mem_alloc_memenv_of with (Δ:=empty) (τ:=sintT%T).
@@ -1085,7 +1085,7 @@ induction 1.
   clear y.
   destruct (lookup_lt_is_Some_2 _ _ H1) as [mv Hmv].
   destruct H5 as [Hvalid H5].
-  destruct (mem_stack_lookup_stack _ _ _ _ _ _ _ H5 Hmv) as [o Ho].
+  destruct (stack_mem_lookup_stack _ _ _ _ _ _ _ H5 Hmv) as [o Ho].
   eapply assign_pure' with (1:=H9).
   + assumption.
   + simpl.
@@ -1122,7 +1122,7 @@ induction 1.
       unfold int_pre_cast in H10.
       simpl in H10.
       assert ((Γ, '{m}) ⊢ addr_top o sintT%BT : sintT%PT). {
-        apply mem_stack_typed with (1:=H5) (2:=Ho).
+        apply stack_mem_typed with (1:=H5) (2:=Ho).
       }
       assert (Hz_typed: (Γ, '{m}) ⊢ (intV{sintT} z: val K) : (sintT%BT: type K)). {
         constructor.
@@ -1148,7 +1148,7 @@ induction 1.
                rewrite Hint_coding.
                rewrite H12.
                rewrite mem_erase_insert.
-               apply mem_stack_insert.
+               apply stack_mem_insert.
                +++ assumption.
                +++ assumption.
                +++ assumption.
@@ -1165,7 +1165,7 @@ induction 1.
     * elim H10.
       eapply ehsafe_step.
       constructor.
-      -- rewrite <- mem_erase_writable. apply mem_stack_writable with (1:=H5) (2:=Ho).
+      -- rewrite <- mem_erase_writable. apply stack_mem_writable with (1:=H5) (2:=Ho).
       -- constructor.
          ++ assumption.
          ++ reflexivity.
@@ -1219,7 +1219,7 @@ apply bigstep_sound_lemma with (1:=H) (2:=H1) (3:=H0) (4:=H2).
     rewrite fmap_empty.
     apply memenv_empty_valid.
   + rewrite cmap_erase_empty.
-    apply mem_stack_empty.
+    apply stack_mem_empty.
     * assumption.
     * simpl. rewrite fmap_empty.
       apply memenv_empty_valid.
