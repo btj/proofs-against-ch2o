@@ -301,7 +301,7 @@ Qed.
 
 Lemma mem_unlock_lock_singleton (Γ: env K) o (m: mem K):
   ✓{Γ} m ->
-  '{m} !! o = Some (sintT%T, false) ->
+  (Γ, '{m}) ⊢ addr_top o sintT%BT : sintT%PT ->
   mem_writable Γ (addr_top o sintT%BT) m ->
   mem_unlock
     (lock_singleton Γ (addr_top o sintT%BT))
@@ -329,16 +329,22 @@ destruct (decide (i = o)).
   simpl in Hw.
   injection Hw; clear Hw; intros; subst.
   simpl.
-  rewrite lookup_fmap in H.
-  rewrite H0 in H.
+  unfold typed in H.
+  unfold addr_typed in H.
   simpl in H.
-  injection H; clear H; intros; subst.
+  inversion H; clear H; subst.
+  unfold typed in H8.
+  unfold index_typed in H8.
+  destruct H8 as [β Ho].
+  rewrite lookup_fmap in Ho.
+  rewrite H0 in Ho.
+  simpl in Ho.
+  injection Ho; clear Ho; intros; subst.
   destruct w; try discriminate.
   destruct b0; try discriminate.
   destruct i; try discriminate.
-  simpl in H.
-  injection H; clear H; intros; subst.
-  clear H1.
+  simpl in H2.
+  injection H2; clear H2; intros; subst.
   simpl.
   pose proof H0.
   apply Hvalid3 in H0.
@@ -358,7 +364,7 @@ destruct (decide (i = o)).
   inversion Ho3; subst.
   rewrite fmap_length.
   assert (Datatypes.length l = 32). {
-    rewrite H4.
+    rewrite H5.
     reflexivity.
   }
   rewrite H0.
@@ -381,11 +387,11 @@ destruct (decide (i = o)).
      true; true; true; true; true; true; true; true;
      true; true; true; true; true; true; true; true]).
   reflexivity.
-  rewrite H1.
+  rewrite H2.
   pose proof (zip_with_pbit_unlock_if_list_fmap_pbit_lock l H'w).
-  rewrite H0 in H5.
-  simpl in H5.
-  rewrite H5.
+  rewrite H0 in H6.
+  simpl in H6.
+  rewrite H6.
   reflexivity.
 - rewrite lookup_singleton_ne; try congruence.
   rewrite lookup_alter_ne; try congruence.
@@ -1153,9 +1159,16 @@ induction 1.
                    apply cmap_erase_valid.
                    assumption.
       -- rewrite mem_insert_memenv_of with (Δ:='{m}) (τ:=sintT%T); try assumption.
-         ++ 
-     
-      
+      -- apply mem_insert_writable with (Δ:='{m}) (τ2:=sintT%T); try assumption.
+         ++ left; reflexivity.
+    * elim H10.
+      eapply ehsafe_step.
+      constructor.
+      -- rewrite <- mem_erase_writable. apply mem_stack_writable with (1:=H5) (2:=Ho).
+      -- constructor.
+         ++ assumption.
+         ++ reflexivity.
+- 
 Admitted.
 
 Theorem bigstep_sound `{Env K} s z:
