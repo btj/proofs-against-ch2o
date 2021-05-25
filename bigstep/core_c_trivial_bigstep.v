@@ -459,13 +459,13 @@ induction 1.
   reflexivity.
 Qed.
 
-Theorem exec_sound Γ δ (s: stmt K) z S:
+Theorem exec_sound Γ δ (s: stmt K) z S f:
   ✓ Γ ->
   exec [] s (oreturn z) ->
   is_final_state S ->
-  Γ\ δ\ [] ⊢ₛ State [] (Stmt ↘ s) ∅ ⇒* S ->
+  Γ\ δ\ [] ⊢ₛ State [CParams f []] (Stmt ↘ s) ∅ ⇒* S ->
   exists m,
-  S = State [] (Stmt (⇈ (intV{sintT} z)) s) m.
+  Γ\ δ\ [] ⊢ₛ State [CParams f []] (Stmt (⇈ (intV{sintT} z)) s) m ⇒* S.
 intros.
 apply exec_sound_lemma with (1:=H) (2:=H1) (3:=H0) (4:=H2).
 - split.
@@ -482,7 +482,5 @@ apply exec_sound_lemma with (1:=H) (2:=H1) (3:=H0) (4:=H2).
   inv_rcsteps H5. elim H1. inv_rcstep.
 - intros.
   injection H3; clear H3; intros; subst.
-  inv_rcsteps H4.
-  + exists m'; reflexivity.
-  + inv_rcstep.
+  eexists; eassumption.
 Qed.
