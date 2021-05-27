@@ -145,7 +145,48 @@ induction 1.
       rewrite stack_indep.
       rewrite assert_Prop_r. 2:reflexivity.
       reflexivity.
-- 
+- apply ax_local.
+  apply ax_stmt_weaken with (8:=IHexec); intros.
+  + unfold R.
+    apply assert_exist_elim; intro st'.
+    apply assert_Prop_intro_r.
+    intros.
+    destruct H0.
+    destruct H1.
+    destruct H1.
+    injection H1; clear H1; intros; subst.
+    destruct st' as [|mv st']; [discriminate|].
+    simpl.
+    apply assert_sep_preserving.
+    * destruct mv.
+      -- eapply assert_exist_intro.
+         unfold points_to.
+         reflexivity.
+      -- reflexivity.
+    * rewrite assert_lift_exists.
+      apply assert_exist_intro with (x0:=st').
+      rewrite assert_lift_sep.
+      rewrite stack_indep.
+      rewrite assert_Prop_r.
+      -- reflexivity.
+      -- split.
+         ++ simpl in H0; congruence.
+         ++ eexists; tauto.
+  + unfold J.
+    apply assert_False_elim.
+  + unfold J.
+    rewrite stack_indep.
+    apply @RightAbsorb_instance_2.
+  + unfold T.
+    apply assert_False_elim.
+  + unfold C.
+    rewrite stack_indep.
+    apply @RightAbsorb_instance_2.
+  + simpl.
+    reflexivity.
+  + apply assert_exist_elim. intro st'0.
+    apply assert_Prop_intro_r. intro HO.
+    discriminate.
 
 Theorem exec_sound Γ δ (s: stmt K) z S f:
   ✓ Γ ->
