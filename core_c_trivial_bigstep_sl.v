@@ -39,19 +39,35 @@ assumption.
 Qed.
 
 Lemma assert_lift_eval `{EnvSpec K} (Γ: env K) δ e ν:
-  (e↑ ⇓ ν ⊆{Γ,δ} (e ⇓ ν)↑)%A.
-unfold subseteqE.
-unfold assert_entails.
-unfold assert_expr.
-unfold assert_lift.
-simpl.
-intros.
-destruct H7 as [τlr [Ht He]].
-rewrite expr_eval_lift in He.
-apply expr_typed_lift in Ht.
-exists τlr.
-split; [|assumption].
-destruct ρ; assumption.
+  (e↑ ⇓ ν ≡{Γ,δ} (e ⇓ ν)↑)%A.
+unfold equivE.
+unfold assert_equiv.
+split.
+- unfold subseteqE.
+  unfold assert_entails.
+  unfold assert_expr.
+  unfold assert_lift.
+  simpl.
+  intros.
+  destruct H7 as [τlr [Ht He]].
+  rewrite expr_eval_lift in He.
+  apply expr_typed_lift in Ht.
+  exists τlr.
+  split; [|assumption].
+  destruct ρ; assumption.
+- unfold subseteqE.
+  unfold assert_entails.
+  unfold assert_expr.
+  unfold assert_lift.
+  simpl.
+  intros.
+  destruct H7 as [τlr [Ht He]].
+  exists τlr.
+  split.
+  + apply expr_typed_lift.
+    destruct ρ; assumption.
+  + rewrite expr_eval_lift.
+    destruct ρ; assumption.
 Qed.
 
 Lemma assert_eval_functional `{EnvSpec K} (Γ: env K) δ e ν1 ν2:
@@ -215,6 +231,56 @@ induction st.
       reflexivity.
 Qed.
 
+Lemma assert_stack_var (Γ: env K) δ st i:
+  i < length st ->
+  assert_stack st ⊆{Γ,δ}
+  ((∃p, var i ⇓ inl p ∧ emp) ★ assert_stack st)%A.
+revert i.
+induction st; simpl; intros.
+- lia.
+- destruct i.
+  + rewrite (associative (★)%A).
+    apply assert_sep_preserving; [|reflexivity].
+    rename a into mv.
+    destruct mv.
+    * simpl.
+      rewrite assert_singleton_l at 1.
+      apply assert_exist_elim; intro p.
+      rewrite assert_exist_sep.
+      apply assert_exist_intro with (x:=p).
+      rewrite emp_dup at 1.
+      rewrite <- (associative (★)%A).
+      apply assert_sep_preserving; [reflexivity|].
+      rewrite assert_singleton_l_2.
+      reflexivity.
+    * simpl.
+      rewrite assert_singleton_l_ at 1.
+      apply assert_exist_elim; intro p.
+      rewrite assert_exist_sep.
+      apply assert_exist_intro with (x:=p).
+      rewrite emp_dup at 1.
+      rewrite <- (associative (★)%A).
+      apply assert_sep_preserving; [reflexivity|].
+      rewrite assert_singleton_l_2_.
+      reflexivity.
+  + rewrite (commutative (★)%A).
+    rewrite (associative (★)%A).
+    apply assert_sep_preserving; [|reflexivity].
+    rewrite IHst with (i:=i) at 1; [|lia].
+    rewrite assert_lift_sep.
+    rewrite assert_lift_exists.
+    apply assert_sep_preserving; [|reflexivity].
+    apply assert_exist_elim; intro p.
+    apply assert_exist_intro with (x:=p).
+    rewrite assert_lift_and.
+    rewrite stack_indep.
+    apply assert_and_intro.
+    * apply assert_and_elim_l.
+      rewrite <- assert_lift_eval at 1.
+      reflexivity.
+    * apply assert_and_elim_r; reflexivity.
+Qed.
+
 Lemma assert_stack_load (Γ: env K) δ st i z:
   st !! i = Some (Some z) ->
   assert_stack st ⊆{Γ,δ} (load (var i) ⇓ inr (intV{sintT} z))%A.
@@ -306,8 +372,6 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
   eval st e z ->
   exec st (ret (cast{sintT%BT} e)) (oreturn z)
 .
-
-
 
 Definition R (st: store) (O: outcome): val K -> assert K :=
   λ v,
@@ -410,9 +474,9 @@ induction 1.
     apply assert_exist_intro with (x:=(<[i:=Some z]> st)).
     rewrite assert_Prop_r; reflexivity.
   }
-  eapply ax_stmt_weaken_pre with (P:=(emp ★ assert_stack st)%A). {
-    rewrite (left_id _ (★)%A).
-    reflexivity.
+  eapply ax_stmt_weaken_pre with (P:=((∃p, var i ⇓ inl p ∧ emp) ★ assert_stack st)%A). {
+    apply assert_stack_var.
+    assumption.
   }
   apply ax_do.
   apply ax_assign with
@@ -515,59 +579,39 @@ Qed.
                rewrite assert_lift_singleton_.
                reflexivity.
             ** lia.
-    * 
- 
-  apply ax_stmt_exist_pre. intro ρ.
-  eapply ax_stmt_weaken_pre. {
-    apply assert_stack'_var with (1:=H).
-  }
-  assert (Inhabited (ptr K)). {
-    constructor.
-    apply NULL.
-    constructor.
-    apply (sintT%T).
-  }
-  apply ax_stmt_exist_pre. intro a.
-  rewrite (associative (★)%A).
-  rewrite (commutative (★)%A).
-  apply ax_stmt_Prop_pre. {
-    intros.
-    unfold J.
-    apply assert_False_elim.
-  } {
-    intros.
-    unfold C.
-    apply assert_False_elim.
-  }
-  intros.
-  apply ax_stmt_weaken_pre with (P:=((var i ⇓ inl a ∧ emp) ★ emp ★ assert_stack' ρ st)%A). {
-    rewrite (left_id _ (★)%A).
-    reflexivity.
-  }
-  apply ax_do.
-  eapply ax_expr_weaken_post with (Q':=fun _ => (emp ★ assert_stack (<[i:=Some z]> st) ◊)%A). {
-    intros.
-    rewrite (left_id _ (★)%A).
-    reflexivity.
-  }
-  eapply ax_expr_weaken_post with (Q':=fun _ => ((var i ⇓ inl a ∧ emp) ★ assert_stack (<[i:=Some z]> st) ◊)%A). {
-    intros.
-    apply assert_sep_preserving; [|reflexivity].
-    apply assert_and_r.
-  }
-  apply ax_expr_invariant_l.
-  rewrite (right_id _ (★)%A).
-  apply ax_assign with
-    (Q1:=fun ν => ⌜ν = inl a⌝)
-    (Q2:=fun ν => ⌜ν = inr (intV{sintT} z⌝ ★ assert_stack' ρ st.
-  
-  
-  
+    * apply assert_wand_intro.
+      simpl.
+      rewrite eval_sound with (6:=H0).
+      assert (forall P Q, P ⊆{Γ,δ} Q -> P ⊆{Γ,δ} (Q ∧ Q)%A). {
+        intros.
+        apply assert_and_intro; assumption.
+      }
+      apply H1; clear H1.
+      rewrite (right_id _ (★)%A).
+      rewrite <- (left_id _ (★)%A) with (x:=(cast{sintT%BT} (# intV{sintT} z) ⇓ inr (intV{sintT} z))%A).
+      apply assert_sep_preserving.
+      -- apply assert_and_elim_r; reflexivity.
+      -- rewrite assert_eval_int_typed.
+         apply assert_Prop_intro_l. intro Hz.
+         eapply assert_eval_int_cast'.
+         ++ rewrite <- assert_int_typed_eval; trivial.
+         ++ constructor; apply Hz.
+         ++ reflexivity.
+  + apply ax_expr_exist_pre. intro p.
+    apply ax_expr_base with (ν:=inl p).
+    apply assert_and_intro; [reflexivity|].
+    apply assert_and_elim_l; reflexivity.
+  + apply ax_expr_base with (ν:=inr (intV{sintT} z)).
+    rewrite assert_Prop_l; [|reflexivity].
+    apply assert_and_intro; [reflexivity|].
+    rewrite eval_sound with (6:=H0) at 1.
+    rewrite assert_eval_int_typed'.
+    rewrite assert_Prop_intro_l; [reflexivity|]. intros.
+    rewrite assert_eval_int_cast with (τi:=sintT%IT) (σi:=sintT%IT).
+    * reflexivity.
+    * assumption.
+- 
 
-  
-  
-    
-  
 Theorem exec_sound Γ δ (s: stmt K) z S f:
   ✓ Γ ->
   exec [] s (oreturn z) ->
