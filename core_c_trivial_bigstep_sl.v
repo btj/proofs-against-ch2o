@@ -38,6 +38,127 @@ Fixpoint assert_stack(st: store): assert K :=
     points_to 0 mv ★ assert_stack st ↑
   end.
 
+Definition points_to' a mv: assert K :=
+  match mv with
+    None =>
+    % a ↦{false, perm_full} - : sintT%BT
+  | Some z =>
+    % a ↦{false, perm_full} (# intV{sintT} z) : sintT%BT
+  end.
+
+Fixpoint assert_stack'(ρ: list (ptr K))(st: store): assert K :=
+  match ρ, st with
+    [], [] => emp
+  | a::ρ, mv::st =>
+    (var 0 ⇓ inl a ∧ emp) ★ points_to' a mv ★
+    assert_stack' ρ st ↑
+  | _, _ => False
+  end.
+
+Lemma points_to'_intro (Γ: env K) δ mv:
+  points_to 0 mv ⊆{Γ,δ}
+  (∃a, (var 0 ⇓ inl a ∧ emp) ★ points_to' a mv)%A.
+destruct mv.
+- apply assert_singleton_l.
+- apply assert_singleton_l_.
+Qed.
+
+Lemma assert_stack'_intro (Γ: env K) δ st:
+  (assert_stack st ⊆{Γ,δ} ∃ρ, assert_stack' ρ st)%A.
+induction st; simpl.
+- apply assert_exist_intro with (x:=[]).
+  reflexivity.
+- rename a into mv.
+  rewrite points_to'_intro.
+  rewrite assert_exist_sep.
+  apply assert_exist_elim; intro a.
+  rewrite IHst.
+  rewrite assert_lift_exists.
+  rewrite (commutative (★)%A).
+  rewrite assert_exist_sep.
+  apply assert_exist_elim; intro ρ.
+  apply assert_exist_intro with (x:=a::ρ).
+  simpl.
+  rewrite (commutative (★)%A).
+  rewrite (associative (★)%A).
+  reflexivity.
+Qed.
+
+Lemma emp_dup (P: assert K) (Γ: env K) δ:
+  ((P ∧ emp)%A ⊆{Γ,δ} ((P ∧ emp) ★ (P ∧ emp)))%A.
+unfold subseteqE.
+unfold assert_entails.
+intros.
+unfold assert_and in *.
+unfold assert_sep in *.
+simpl in *.
+destruct H5.
+destruct H6.
+subst.
+exists ∅. exists ∅.
+split.
++ rewrite sep_right_id.
+  reflexivity.
+  apply sep_empty_valid.
++ split.
+  * rewrite sep_disjoint_list_double.
+    apply sep_disjoint_empty_l.
+    apply sep_empty_valid.
+  * tauto.
+Qed.
+
+Lemma assert_stack'_var (Γ: env K) δ ρ st i:
+  i < length st ->
+  (assert_stack' ρ st ⊆{Γ,δ}
+   ∃a, (var i ⇓ inl a ∧ emp) ★ assert_stack' ρ st
+   ★ ⌜ρ !! i = Some a⌝)%A.
+revert ρ i.
+induction st.
+- simpl; intros; lia.
+- simpl; intros.
+  rename a into mv.
+  destruct ρ as [|a ρ]; simpl.
+  + apply assert_False_elim.
+  + destruct i; simpl.
+    * apply assert_exist_intro with (x:=a).
+      rewrite assert_Prop_r; [|reflexivity].
+      assert (forall A B C: assert K,
+        A ⊆{Γ,δ} (A ★ A)%A ->
+        (A ★ B ★ C)%A ⊆{Γ,δ}
+        (A ★ A ★ B ★ C)%A). {
+        intros.
+        rewrite H0 at 1.
+        rewrite (associative (★)%A).
+        rewrite (associative (★)%A).
+        rewrite (associative (★)%A).
+        reflexivity.
+      }
+      apply H0; clear H0.
+      apply emp_dup.
+    * assert (i < length st). lia. clear H.
+      rewrite IHst with (3:=H0).
+      rewrite (associative (★)%A).
+      rewrite (commutative (★)%A).
+      rewrite assert_lift_exists.
+      rewrite assert_exist_sep.
+      apply assert_exist_elim. intro a0.
+      apply assert_exist_intro with (x:=a0).
+      rewrite assert_lift_sep.
+      rewrite assert_lift_sep.
+      rewrite assert_lift_and.
+      rewrite assert_lift_expr.
+      rewrite stack_indep.
+      simpl.
+      rewrite <- (associative (★)%A).
+      apply assert_sep_preserving; [reflexivity|].
+      rewrite (commutative (★)%A).
+      rewrite (associative (★)%A).
+      rewrite stack_indep.
+      apply assert_sep_preserving; [|reflexivity].
+      rewrite (associative (★)%A).
+      reflexivity.
+Qed.
+
 Lemma assert_stack_load (Γ: env K) δ st i z:
   st !! i = Some (Some z) ->
   assert_stack st ⊆{Γ,δ} (load (var i) ⇓ inr (intV{sintT} z))%A.
@@ -187,7 +308,17 @@ induction 1.
   + apply assert_exist_elim. intro st'0.
     apply assert_Prop_intro_r. intro HO.
     discriminate.
-
+- apply ax_do.
+  eapply ax_expr_weaken_post with (Q':=fun _ => (assert_stack (<[i:=Some z]>st)◊)%A). {
+    intros.
+    rewrite assert_unlock_exists .
+    apply assert_exist_intro with (x:=(<[i:=Some z]> st)).
+    rewrite <- assert_unlock_sep.
+    rewrite <- unlock_indep.
+    rewrite assert_Prop_r; reflexivity.
+  }
+  apply ax_assign.
+  
 Theorem exec_sound Γ δ (s: stmt K) z S f:
   ✓ Γ ->
   exec [] s (oreturn z) ->
