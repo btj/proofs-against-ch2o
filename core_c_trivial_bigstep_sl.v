@@ -316,6 +316,28 @@ destruct mv; unfold points_to.
   reflexivity.
 Qed.
 
+Lemma assert_stack_unlock_indep' (Γ: env K) δ st:
+  assert_stack st ⊆{Γ,δ} (assert_stack st ◊)%A.
+revert Γ δ.
+induction st; simpl; intros.
+- rewrite <- unlock_indep.
+  reflexivity.
+- rewrite <- assert_unlock_sep.
+  apply assert_sep_preserving.
+  + rename a into mv.
+    destruct mv; unfold points_to.
+    * simpl.
+      apply assert_singleton_unlock_indep.
+      reflexivity.
+    * apply assert_exist_elim; intro v.
+      rewrite assert_unlock_exists.
+      apply assert_exist_intro with (x:=v).
+      apply assert_singleton_unlock_indep.
+      reflexivity.
+  + assert (UnlockIndep (assert_stack st)%A). exact IHst.
+    apply unlock_indep.
+Qed.
+
 Lemma assert_stack_unlock_indep (Γ: env K) δ st:
   (assert_stack st↑)%A ⊆{Γ,δ} ((assert_stack st↑) ◊)%A.
 revert Γ δ.
@@ -372,6 +394,24 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
   eval st e z ->
   exec st (ret (cast{sintT%BT} e)) (oreturn z)
 .
+
+Lemma exec_onormal_length_st `{EnvSpec K} st s O:
+  exec st s O ->
+  forall st',
+  O = onormal st' ->
+  length st' = length st.
+induction 1; intros; try discriminate.
+- (* exec_local_normal *)
+  lapply (IHexec (mv :: st')); [|reflexivity].
+  intros.
+  simpl in H3; injection H3; clear H3; intros; subst.
+  congruence.
+- (* eval_assign *)
+  injection H3; clear H3; intros; subst.
+  apply insert_length.
+- rewrite IHexec2; [|assumption].
+  apply IHexec1; reflexivity.
+Qed.
 
 Definition R (st: store) (O: outcome): val K -> assert K :=
   λ v,
@@ -610,7 +650,67 @@ Qed.
     rewrite assert_eval_int_cast with (τi:=sintT%IT) (σi:=sintT%IT).
     * reflexivity.
     * assumption.
-- 
+- eapply ax_comp with (P':=assert_stack st').
+  + eapply ax_stmt_weaken.
+    Focus 8. {
+      apply IHexec1.
+    } Unfocus.
+    * intros; unfold R.
+      apply assert_exist_elim; intro st'0.
+      apply assert_Prop_intro_r.
+      intros.
+      destruct H1 as [? [? [? ?]]].
+      discriminate.
+    * trivial.
+    * trivial.
+    * trivial.
+    * trivial.
+    * trivial.
+    * apply assert_exist_elim; intro st'0.
+      apply assert_Prop_intro_r.
+      intros.
+      injection H1; clear H1; intros; subst.
+      reflexivity.
+  + eapply ax_stmt_weaken.
+    Focus 8. {
+      apply IHexec2.
+    } Unfocus.
+    * intros.
+      unfold R.
+      rewrite exec_onormal_length_st with (1:=H); reflexivity.
+    * trivial.
+    * trivial.
+    * trivial.
+    * trivial.
+    * trivial.
+    * trivial.
+- eapply ax_ret with (Q1:=fun ν =>
+    (∃ st', assert_stack st' ★ ⌜ ν = inr (intV{sintT} z) ∧ length st' = length st ⌝)%A).
+  + intros.
+    apply assert_exist_elim; intro st'.
+    unfold R.
+    rewrite assert_unlock_exists.
+    apply assert_exist_intro with (x:=st').
+    apply assert_Prop_intro_r. intros [? ?].
+    injection H0; clear H0; intros; subst.
+    rewrite assert_Prop_r.
+    * apply assert_stack_unlock_indep'.
+    * intuition.
+      eexists; tauto.
+  + apply ax_expr_base with (ν:=inr (intV{sintT} z)).
+    apply assert_and_intro.
+    * apply assert_exist_intro with (x:=st).
+      rewrite assert_Prop_r; [reflexivity|].
+      tauto.
+    * rewrite eval_sound with (6:=H).
+      rewrite assert_eval_int_typed'.
+      apply assert_Prop_intro_l. intros.
+      rewrite <- assert_eval_int_cast' with (τi:=sintT%IT) (σi:=sintT%IT) at 1.
+      -- reflexivity.
+      -- reflexivity.
+      -- assumption.
+      -- reflexivity.
+Qed.
 
 Theorem exec_sound Γ δ (s: stmt K) z S f:
   ✓ Γ ->
