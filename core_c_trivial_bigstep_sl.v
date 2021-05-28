@@ -4,6 +4,14 @@ Require Export ch2o.axiomatic.axiomatic_statements.
 Require Export ch2o.axiomatic.axiomatic_expressions.
 Require Export ch2o.axiomatic.axiomatic_adequate.
 
+Lemma assert_wand_sep `{EnvSpec K} (Γ: env K) δ P Q R:
+  ((P ★ (Q -★ R)) ⊆{Γ,δ} (Q -★ (P ★ R)))%A.
+apply assert_wand_intro.
+rewrite <- (associative (★)%A).
+apply assert_sep_preserving; [reflexivity|].
+apply assert_wand_elim.
+Qed.
+
 Lemma emp_dup `{EnvSpec K} (P: assert K) (Γ: env K) δ:
   ((P ∧ emp)%A ⊆{Γ,δ} ((P ∧ emp) ★ (P ∧ emp)))%A.
 unfold subseteqE.
@@ -208,7 +216,7 @@ induction st.
       apply H0; clear H0.
       apply emp_dup.
     * assert (i < length st). lia. clear H.
-      rewrite IHst with (3:=H0).
+      rewrite IHst with (1:=H0).
       rewrite (associative (★)%A).
       rewrite (commutative (★)%A).
       rewrite assert_lift_exists.
@@ -298,7 +306,7 @@ induction st.
   + simpl; intros.
     rewrite <- assert_memext_r with (Q:=points_to 0 a) (P:=(load (var (S i)) ⇓ inr (intV{sintT} z))%A); [|auto with typeclass_instances].
     apply assert_sep_preserving; [reflexivity|].
-    rewrite IHst with (2:=H).
+    rewrite IHst with (1:=H).
     rewrite assert_lift_expr.
     reflexivity.
 Qed.
@@ -582,13 +590,6 @@ induction 1.
             ** apply assert_stack_unlock_indep.
          ++ simpl.
             rewrite <- assert_unlock_sep.
-Lemma assert_wand_sep (Γ: env K) δ P Q R:
-  ((P ★ (Q -★ R)) ⊆{Γ,δ} (Q -★ (P ★ R)))%A.
-apply assert_wand_intro.
-rewrite <- (associative (★)%A).
-apply assert_sep_preserving; [reflexivity|].
-apply assert_wand_elim.
-Qed.
             rewrite <- assert_wand_sep.
             rewrite (commutative (★)%A).
             rewrite <- (associative (★)%A).
@@ -621,7 +622,7 @@ Qed.
             ** lia.
     * apply assert_wand_intro.
       simpl.
-      rewrite eval_sound with (6:=H0).
+      rewrite eval_sound with (1:=H0).
       assert (forall P Q, P ⊆{Γ,δ} Q -> P ⊆{Γ,δ} (Q ∧ Q)%A). {
         intros.
         apply assert_and_intro; assumption.
@@ -644,7 +645,7 @@ Qed.
   + apply ax_expr_base with (ν:=inr (intV{sintT} z)).
     rewrite assert_Prop_l; [|reflexivity].
     apply assert_and_intro; [reflexivity|].
-    rewrite eval_sound with (6:=H0) at 1.
+    rewrite eval_sound with (1:=H0) at 1.
     rewrite assert_eval_int_typed'.
     rewrite assert_Prop_intro_l; [reflexivity|]. intros.
     rewrite assert_eval_int_cast with (τi:=sintT%IT) (σi:=sintT%IT).
@@ -702,7 +703,7 @@ Qed.
     * apply assert_exist_intro with (x:=st).
       rewrite assert_Prop_r; [reflexivity|].
       tauto.
-    * rewrite eval_sound with (6:=H).
+    * rewrite eval_sound with (1:=H).
       rewrite assert_eval_int_typed'.
       apply assert_Prop_intro_l. intros.
       rewrite <- assert_eval_int_cast' with (τi:=sintT%IT) (σi:=sintT%IT) at 1.
