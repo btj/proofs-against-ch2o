@@ -13,6 +13,7 @@ Require Export bigstep_soundness.
 Require Export three_locals.
 
 Definition get_right{A B}(v: A + B)(H: match v with inl _ => False | inr _ => True end): B.
+Proof.
 destruct v.
 elim H.
 exact b.
@@ -31,17 +32,21 @@ Notation K := (arch_rank A).
 Notation M := (error (frontend_state K) string).
 
 Lemma alloc_program_ok: match alloc_program (K:=K) decls empty with inl _ => False | inr _ => True end.
+Proof.
 exact I.
 Qed.
 
 Definition alloc_program_result: frontend_state K.
+Proof.
 eapply snd.
 eapply get_right.
 apply alloc_program_ok.
 Defined.
 
+(*
 Compute (stringmap_to_list (env_t (to_env alloc_program_result))).
 Compute (stringmap_to_list (env_f (to_env alloc_program_result))).
+*)
 
 Definition to_core_c_program: M (env K * funenv K * state K) :=
   _ ← alloc_program decls;
@@ -59,6 +64,7 @@ Definition to_core_c_program_result: string + env K * funenv K * state K :=
   error_eval to_core_c_program ∅.
 
 Lemma to_core_c_program_ok: match to_core_c_program_result with inl _ => False | inr _ => True end.
+Proof.
 exact I.
 Qed.
 
@@ -70,14 +76,17 @@ Definition m0: mem K := to_mem alloc_program_result.
 Definition S0 := initial_state m0 "main" [].
 
 Lemma alloc_program_eq: alloc_program decls empty = mret () alloc_program_result.
+Proof.
 reflexivity.
 Qed.
 
 Lemma Γ_valid: ✓ Γ.
+Proof.
 apply alloc_program_valid with (1:=alloc_program_eq).
 Qed.
 
 Lemma δ_valid: ✓{Γ,'{m0}} δ.
+Proof.
 apply alloc_program_valid with (1:=alloc_program_eq).
 Qed.
 
@@ -85,7 +94,8 @@ Lemma m0_valid: ✓{Γ} m0.
 apply alloc_program_valid with (1:=alloc_program_eq).
 Qed.
 
-Goal forall S, rtc (cstep Γ δ) S0 S -> ~ is_undef_state S.
+Goal ∀ S, Γ\ δ ⊢ₛ S0 ⇒* S → ¬is_undef_state S.
+Proof.
 intros.
 intro HS.
 apply csteps_rcsteps in H.

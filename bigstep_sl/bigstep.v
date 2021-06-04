@@ -33,9 +33,9 @@ Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
 .
 
 Lemma exec_onormal_length_st `{EnvSpec K} st s O:
-  exec st s O ->
-  forall st',
-  O = onormal st' ->
+  exec st s O →
+  ∀ st',
+  O = onormal st' →
   length st' = length st.
 Proof.
 induction 1; intros; try discriminate.

@@ -7,10 +7,10 @@ Require Export ch2o.axiomatic.axiomatic_adequate.
 
 Section Soundness.
 
-Context {K} {HK: Env K} {HK': EnvSpec K}.
+Context {K} {HK: Env K} {HK': EnvSpec K} (Γ: env K) (δ: funenv K).
 
-Lemma eval_sound (Γ: env K) δ st e z:
-  eval st e z ->
+Lemma eval_sound st e z:
+  eval st e z →
   (assert_stack st ⊆{Γ,δ} e ⇓ inr (intV{sintT} z))%A.
 Proof.
 induction 1.
@@ -29,10 +29,11 @@ Definition J: labelname -> assert K := (λ _, False%A).
 Definition T: nat -> assert K := (λ _, False%A).
 Definition C: option Z -> assert K := (λ _, False%A).
 
-Lemma exec_sound_lemma (Γ: env K) δ st s O:
-  exec st s O ->
+Lemma exec_sound_lemma st s O:
+  exec st s O →
   Γ\ δ\ R st O\ J\ T\ C ⊨ₛ
   {{ assert_stack st }} s {{ ∃st', assert_stack st' ★ ⌜O = onormal st'⌝ }}.
+Proof.
 induction 1.
 - (* exec_local_normal *)
   apply ax_local.
@@ -64,7 +65,7 @@ induction 1.
     apply assert_sep_preserving.
     * destruct mv.
       -- eapply assert_exist_intro.
-         unfold points_to.
+         unfold var_points_to.
          reflexivity.
       -- reflexivity.
     * rewrite assert_lift_exists.
@@ -88,7 +89,7 @@ induction 1.
     apply assert_sep_preserving.
     * destruct mv.
       -- eapply assert_exist_intro.
-         unfold points_to.
+         unfold var_points_to.
          reflexivity.
       -- reflexivity.
     * rewrite assert_lift_exists.
@@ -150,7 +151,7 @@ induction 1.
          destruct i.
          ++ clear IHst H.
             simpl.
-            assert (points_to 0 mv ⊆{Γ,δ} var 0 ↦{false,perm_full} - : sintT%BT)%A. {
+            assert (var_points_to 0 mv ⊆{Γ,δ} var 0 ↦{false,perm_full} - : sintT%BT)%A. {
               destruct mv.
               - eapply assert_exist_intro.
                 simpl. reflexivity.
@@ -192,7 +193,7 @@ induction 1.
             rewrite <- (associative (★)%A).
             rewrite (commutative (★)%A) with (x:=(% p ↦{false,perm_full} - : sintT%BT)%A).
             rewrite <- (associative (★)%A).
-            apply assert_sep_preserving; [apply points_to_unlock_indep|].
+            apply assert_sep_preserving; [apply var_points_to_unlock_indep|].
             rewrite (commutative (★)%A).
             rewrite (commutative (★)%A) with (y:=(% p ↦{false,perm_full} - : sintT%BT)%A).
             assert (
@@ -312,18 +313,19 @@ Qed.
 
 Require Export ch2o.core_c.restricted_smallstep.
 
-Lemma body_returns_call_returns Γ δ v s f S0 S:
-  Γ\ δ\ [] ⊢ₛ S0 ⇒* S ->
-  forall k ϕ m,
-  S0 = State (k ++ [CParams f []]) ϕ m ->
-  (forall S,
-   Γ\ δ\ [] ⊢ₛ State k ϕ m ⇒* S ->
-   red (rcstep Γ δ []) S \/
-   exists m',
-   S = State [] (Stmt (⇈ v) s) m') ->
-  red (rcstep Γ δ []) S \/
-  exists m',
+Lemma body_returns_call_returns v s f S0 S:
+  Γ\ δ\ [] ⊢ₛ S0 ⇒* S →
+  ∀ k ϕ m,
+  S0 = State (k ++ [CParams f []]) ϕ m →
+  (∀ S,
+   Γ\ δ\ [] ⊢ₛ State k ϕ m ⇒* S →
+   red (rcstep Γ δ []) S ∨
+   ∃ m',
+   S = State [] (Stmt (⇈ v) s) m') →
+  red (rcstep Γ δ []) S ∨
+  ∃ m',
   S = State [] (Return f v) m'.
+Proof.
 induction 1.
 - intros; subst.
   destruct (H0 (State k ϕ m)) as [Hred|[m' Hm']].
@@ -358,16 +360,18 @@ induction 1.
     * inversion H7.
 Qed.
 
-Lemma rcsteps_csteps Γ δ S0 S:
-  Γ\ δ\ [] ⊢ₛ S0 ⇒* S ->
+Lemma rcsteps_csteps S0 S:
+  Γ\ δ\ [] ⊢ₛ S0 ⇒* S →
   Γ\ δ ⊢ₛ S0 ⇒* S.
+Proof.
 induction 1.
 - constructor.
 - apply rtc_l with (2:=IHrtc).
   apply rcstep_cstep with (1:=H).
 Qed.
 
-Lemma cmap_empty_valid Γ: ✓{Γ} (∅: mem K).
+Lemma cmap_empty_valid: ✓{Γ} (∅: mem K).
+Proof.
 split. {
   apply memenv_empty_valid.
 }
@@ -381,15 +385,16 @@ simpl in H.
 rewrite lookup_empty in H; discriminate.
 Qed.
 
-Theorem exec_sound Γ δ (s: stmt K) z S f:
-  ✓ Γ ->
-  ✓{Γ,'{∅}} δ ->
-  (Γ, '{∅}, []) ⊢ s : (true, Some sintT%T) ->
-  exec [] s (oreturn z) ->
-  Γ\ δ\ [] ⊢ₛ State [CParams f []] (Stmt ↘ s) ∅ ⇒* S ->
-  red (rcstep Γ δ []) S \/
-  exists m,
+Theorem exec_sound (s: stmt K) z S f:
+  ✓ Γ →
+  ✓{Γ,'{∅}} δ →
+  (Γ, '{∅}, []) ⊢ s : (true, Some sintT%T) →
+  exec [] s (oreturn z) →
+  Γ\ δ\ [] ⊢ₛ State [CParams f []] (Stmt ↘ s) ∅ ⇒* S →
+  red (rcstep Γ δ []) S ∨
+  ∃ m,
   S = State [] (Return f (intV{sintT} z)) m.
+Proof.
 intros.
 eapply body_returns_call_returns with (1:=H3) (k:=[]). reflexivity.
 clear S H3.

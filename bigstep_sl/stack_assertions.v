@@ -1,7 +1,11 @@
 Require Export stores.
 Require Export assertions_lemmas.
 
-Definition points_to `{EnvSpec K} i mv: assert K :=
+Section Program.
+
+Context `{EnvSpec K} (Γ: env K) (δ: funenv K).
+
+Definition var_points_to i mv: assert K :=
   match mv with
     None =>
     var i ↦{false, perm_full} - : sintT%BT
@@ -9,17 +13,18 @@ Definition points_to `{EnvSpec K} i mv: assert K :=
     var i ↦{false, perm_full} (# intV{sintT} z) : sintT%BT
   end.
 
-Fixpoint assert_stack `{EnvSpec K} (st: store): assert K :=
+Fixpoint assert_stack (st: store): assert K :=
   match st with
     [] => emp
   | mv::st =>
-    points_to 0 mv ★ assert_stack st ↑
+    var_points_to 0 mv ★ assert_stack st ↑
   end.
 
-Lemma assert_stack_var `{EnvSpec K} (Γ: env K) δ st i:
+Lemma assert_stack_var st i:
   i < length st ->
   assert_stack st ⊆{Γ,δ}
   ((∃p, var i ⇓ inl p ∧ emp) ★ assert_stack st)%A.
+Proof.
 revert i.
 induction st; simpl; intros.
 - lia.
@@ -66,31 +71,33 @@ induction st; simpl; intros.
     * apply assert_and_elim_r; reflexivity.
 Qed.
 
-Lemma assert_stack_load {K} {HK: Env K} {HK': EnvSpec K} (Γ: env K) δ st i z:
+Lemma assert_stack_load st i z:
   st !! i = Some (Some z) ->
   assert_stack st ⊆{Γ,δ} (load (var i) ⇓ inr (intV{sintT} z))%A.
+Proof.
 revert i.
 induction st.
 - discriminate.
 - destruct i.
   + simpl; intros.
-    injection H; clear H; intros; subst.
+    injection H1; clear H1; intros; subst.
     rewrite <- assert_memext_l with (P:=(load (var 0) ⇓ inr (intV{sintT} z))%A) (Q:=(assert_stack st↑)%A).
     * apply assert_sep_preserving; try reflexivity.
       apply assert_singleton_eval.
       reflexivity.
     * auto with typeclass_instances.
   + simpl; intros.
-    rewrite <- assert_memext_r with (Q:=points_to 0 a) (P:=(load (var (S i)) ⇓ inr (intV{sintT} z))%A); [|auto with typeclass_instances].
+    rewrite <- assert_memext_r with (Q:=var_points_to 0 a) (P:=(load (var (S i)) ⇓ inr (intV{sintT} z))%A); [|auto with typeclass_instances].
     apply assert_sep_preserving; [reflexivity|].
-    rewrite IHst with (1:=H).
+    rewrite IHst with (1:=H1).
     rewrite assert_lift_expr.
     reflexivity.
 Qed.
 
-Lemma points_to_unlock_indep `{EnvSpec K} (Γ: env K) δ i mv:
-  (points_to i mv ⊆{Γ,δ} points_to i mv ◊)%A.
-destruct mv; unfold points_to.
+Lemma var_points_to_unlock_indep i mv:
+  (var_points_to i mv ⊆{Γ,δ} var_points_to i mv ◊)%A.
+Proof.
+destruct mv; unfold var_points_to.
 * simpl.
   apply assert_singleton_unlock_indep.
   reflexivity.
@@ -101,8 +108,9 @@ destruct mv; unfold points_to.
   reflexivity.
 Qed.
 
-Lemma assert_stack_unlock_indep' `{EnvSpec K} (Γ: env K) δ st:
+Lemma assert_stack_unlock_indep' st:
   assert_stack st ⊆{Γ,δ} (assert_stack st ◊)%A.
+Proof.
 revert Γ δ.
 induction st; simpl; intros.
 - rewrite <- unlock_indep.
@@ -110,7 +118,7 @@ induction st; simpl; intros.
 - rewrite <- assert_unlock_sep.
   apply assert_sep_preserving.
   + rename a into mv.
-    destruct mv; unfold points_to.
+    destruct mv; unfold var_points_to.
     * simpl.
       apply assert_singleton_unlock_indep.
       reflexivity.
@@ -123,8 +131,9 @@ induction st; simpl; intros.
     apply unlock_indep.
 Qed.
 
-Lemma assert_stack_unlock_indep `{EnvSpec K} (Γ: env K) δ st:
+Lemma assert_stack_unlock_indep st:
   (assert_stack st↑)%A ⊆{Γ,δ} ((assert_stack st↑) ◊)%A.
+Proof.
 revert Γ δ.
 induction st; simpl; intros.
 - rewrite stack_indep.
@@ -134,7 +143,7 @@ induction st; simpl; intros.
   rewrite <- assert_unlock_sep.
   apply assert_sep_preserving.
   + rename a into mv.
-    destruct mv; unfold points_to.
+    destruct mv; unfold var_points_to.
     * rewrite assert_lift_singleton.
       simpl.
       apply assert_singleton_unlock_indep.
@@ -149,3 +158,5 @@ induction st; simpl; intros.
   + assert (UnlockIndep (assert_stack st↑)%A). exact IHst.
     apply unlock_indep.
 Qed.
+
+End Program.

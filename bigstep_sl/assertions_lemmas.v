@@ -1,15 +1,21 @@
 Require Export ch2o.axiomatic.assertions.
 
-Lemma assert_wand_sep `{EnvSpec K} (Γ: env K) δ P Q R:
+Section Program.
+
+Context `{EnvSpec K} (Γ: env K) (δ: funenv K).
+
+Lemma assert_wand_sep P Q R:
   ((P ★ (Q -★ R)) ⊆{Γ,δ} (Q -★ (P ★ R)))%A.
+Proof.
 apply assert_wand_intro.
 rewrite <- (associative (★)%A).
 apply assert_sep_preserving; [reflexivity|].
 apply assert_wand_elim.
 Qed.
 
-Lemma emp_dup `{EnvSpec K} (P: assert K) (Γ: env K) δ:
+Lemma emp_dup P:
   ((P ∧ emp)%A ⊆{Γ,δ} ((P ∧ emp) ★ (P ∧ emp)))%A.
+Proof.
 unfold subseteqE.
 unfold assert_entails.
 intros.
@@ -31,8 +37,9 @@ split.
   + tauto.
 Qed.
 
-Lemma assert_lift_unlock `{EnvSpec K} (Γ: env K) δ P:
+Lemma assert_lift_unlock P:
   (P ◊ ↑ ⊆{Γ,δ} P ↑ ◊)%A.
+Proof.
 unfold subseteqE.
 unfold assert_entails.
 unfold assert_unlock.
@@ -42,8 +49,9 @@ intros.
 assumption.
 Qed.
 
-Lemma assert_lift_eval `{EnvSpec K} (Γ: env K) δ e ν:
+Lemma assert_lift_eval e ν:
   (e↑ ⇓ ν ≡{Γ,δ} (e ⇓ ν)↑)%A.
+Proof.
 unfold equivE.
 unfold assert_equiv.
 split.
@@ -74,8 +82,9 @@ split.
     destruct ρ; assumption.
 Qed.
 
-Lemma assert_eval_functional `{EnvSpec K} (Γ: env K) δ e ν1 ν2:
+Lemma assert_eval_functional e ν1 ν2:
   (((e ⇓ ν1 ∧ emp) ★ (e ⇓ ν2 ∧ emp)) ⊆{Γ,δ} ⌜ν1 = ν2⌝)%A.
+Proof.
 unfold subseteqE.
 unfold assert_entails.
 unfold assert_sep.
@@ -93,8 +102,9 @@ split.
   apply sep_empty_valid.
 Qed.
 
-Lemma assert_eval_functional' `{EnvSpec K} (Γ: env K) δ e ν1 ν2:
+Lemma assert_eval_functional' e ν1 ν2:
   (((e ⇓ ν1 ∧ emp) ★ (e ⇓ ν2 ∧ emp)) ⊆{Γ,δ} (⌜ν1 = ν2⌝ ★ (e ⇓ ν1 ∧ emp)))%A.
+Proof.
 rewrite emp_dup at 1.
 rewrite (commutative (★)%A).
 rewrite (associative (★)%A).
@@ -102,3 +112,5 @@ apply assert_sep_preserving; [|reflexivity].
 rewrite (commutative (★)%A).
 apply assert_eval_functional.
 Qed.
+
+End Program.
