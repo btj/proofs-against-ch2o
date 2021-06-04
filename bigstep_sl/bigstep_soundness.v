@@ -384,7 +384,7 @@ Qed.
 Theorem exec_sound Γ δ (s: stmt K) z S f:
   ✓ Γ ->
   ✓{Γ,'{∅}} δ ->
-  (Γ, '{∅}, []) ⊢ s : (false, None) ->
+  (Γ, '{∅}, []) ⊢ s : (true, Some sintT%T) ->
   exec [] s (oreturn z) ->
   Γ\ δ\ [] ⊢ₛ State [CParams f []] (Stmt ↘ s) ∅ ⇒* S ->
   red (rcstep Γ δ []) S \/
@@ -395,7 +395,7 @@ eapply body_returns_call_returns with (1:=H3) (k:=[]). reflexivity.
 clear S H3.
 intros.
 apply rcsteps_csteps in H3.
-destruct ax_stmt_adequate with (cmτ:=(false, None): rettype K) (Q:=λ v, (⌜ v = intV{sintT} z ⌝ ★ True)%A) (7:=H3) as [[n' [m' [? ?]]] | [[n' [m' [v [? ?]]]] | ?]]; try assumption.
+destruct ax_stmt_adequate with (cmτ:=(true, Some sintT%T): rettype K) (Q:=λ v, (⌜ v = intV{sintT} z ⌝ ★ True)%A) (7:=H3) as [[n' [m' [? ?]]] | [[n' [m' [v [? ?]]]] | ?]]; try assumption.
 - apply cmap_empty_valid.
 - apply mem_locks_empty.
 - eapply ax_stmt_weaken.

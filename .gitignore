@@ -1,4 +1,10 @@
 *.cache
 *.glob
 *.vo
+*.vos
+*.vok
 *.aux
+ide
+.CoqMakefile.d
+CoqMakefile.conf
+bigstep_sl/Makefile
